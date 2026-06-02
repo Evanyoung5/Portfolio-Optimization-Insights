@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio Optimization</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem("portfolio_theme") || "light";</script>
+  <link rel="stylesheet" href="/static/styles.css?v=client-history-options-ui-2026-06-01">
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <header class="topbar">
+    <div class="brand-block">
+      <div class="brand-mark">PO</div>
+      <div>
+        <h1>Portfolio Optimization</h1>
+        <p id="api-status">Checking API</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="sidebar-toggle" class="icon-button" type="button" title="Collapse portfolio sidebar" aria-pressed="false" aria-label="Collapse portfolio sidebar">&#9776;</button>
+      <span id="runtime-pill" class="pill muted">Runtime unknown</span>
+      <span id="user-pill" class="pill muted">Signed out</span>
+      <button id="logout-button" class="button ghost" type="button" hidden>Log out</button>
+    </div>
+  </header>
+
+  <main id="auth-screen" class="auth-screen">
+    <section class="auth-panel">
+      <div class="auth-copy">
+        <h2>Sign in to your private portfolio workspace</h2>
+        <p>Manual lots, cash movements, trades, settings, and portfolio history stay attached to your account.</p>
+      </div>
+      <div class="auth-grid">
+        <form id="login-form" class="panel form-grid">
+          <h3>Login</h3>
+          <label>Email<input name="email" type="email" autocomplete="email" required></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+          <button class="button primary" type="submit">Log in</button>
+        </form>
+        <form id="register-form" class="panel form-grid">
+          <h3>Create Account</h3>
+          <label>Email<input name="email" type="email" autocomplete="email" required></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+          <button class="button primary" type="submit">Register</button>
+        </form>
+        <form id="password-reset-request-form" class="panel form-grid compact-form">
+          <h3>Password Reset</h3>
+          <label>Email<input name="email" type="email" autocomplete="email" required></label>
+          <button class="button secondary" type="submit">Request reset</button>
+        </form>
+        <form id="password-reset-confirm-form" class="panel form-grid compact-form">
+          <h3>Set New Password</h3>
+          <label>Token<input name="token"></label>
+          <label>New Password<input name="new_password" type="password" minlength="8"></label>
+          <button class="button secondary" type="submit">Set password</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div id="app-shell" class="app-shell" hidden>
+    <aside class="sidebar">
+      <section class="sidebar-section">
+        <div class="section-head">
+          <h2>Portfolios</h2>
+          <button id="refresh-workspace" class="icon-button" title="Refresh workspace" type="button">R</button>
+        </div>
+        <div id="portfolio-list" class="portfolio-list"></div>
+      </section>
+
+      <section class="sidebar-section">
+        <h2>Create</h2>
+        <form id="create-portfolio-form" class="form-grid dense-form">
+          <label>Name<input name="name" required placeholder="Taxable Brokerage"></label>
+          <label>Cash<input name="cash" type="number" min="0" step="0.01" value="0"></label>
+          <label>Currency<input name="base_currency" maxlength="3" value="USD"></label>
+          <button class="button primary" type="submit">Create portfolio</button>
+        </form>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <nav class="tabs" aria-label="Workspace tabs">
+        <button class="tab active" data-tab="dashboard" type="button">Dashboard</button>
+        <button class="tab" data-tab="entry" type="button">Entry</button>
+        <button class="tab" data-tab="risk" type="button">Risk</button>
+        <button class="tab" data-tab="relativistic-bs" type="button">Options Suite</button>
+        <button class="tab" data-tab="heatmap" type="button">Heatmap</button>
+        <button class="tab" data-tab="optimize" type="button">Optimize</button>
+        <button class="tab" data-tab="simulate" type="button">Simulate</button>
+        <button class="tab" data-tab="market" type="button">Market Data</button>
+        <button class="tab" data-tab="account" type="button">Account</button>
+      </nav>
+
+      <section id="no-portfolio" class="empty-state">
+        <h2>Create or select a portfolio</h2>
+        <p>The manual entry page will unlock once a private portfolio exists.</p>
+      </section>
+
+      <div id="pages" hidden>
+        <section id="dashboard" class="page active">
+          <div class="page-head">
+            <div>
+              <h2 id="portfolio-title">Portfolio</h2>
+              <p id="portfolio-subtitle">Manual portfolio dashboard</p>
+            </div>
+            <button id="dashboard-refresh-market" class="button secondary" type="button">Refresh quotes</button>
+          </div>
+          <div id="metric-grid" class="metric-grid"></div>
+          <section class="panel quote-panel">
+            <div class="section-head"><h3>Today's Quotes</h3><span id="dashboard-quote-status" class="pill muted">No quotes</span></div>
+            <div id="dashboard-quote-snapshot" class="quote-snapshot"></div>
+          </section>
+          <section class="panel chart-panel performance-panel">
+            <div class="performance-head">
+              <div>
+                <h3>Performance</h3>
+                <div id="benchmark-chips" class="chip-row"></div>
+              </div>
+              <div class="performance-controls">
+                <div id="performance-range" class="segmented-control compact">
+                  <button type="button" data-range="day">Day</button>
+                  <button type="button" data-range="week">Week</button>
+                  <button type="button" data-range="month">Month</button>
+                  <button type="button" data-range="ytd">YTD</button>
+                  <button type="button" data-range="year">Year</button>
+                  <button type="button" data-range="five_year">5Y</button>
+                  <button type="button" data-range="max">Max</button>
+                </div>
+                <label class="resolution-control" title="Choose how densely the chart draws cached prices. Fine intervals are limited to short time ranges to protect the market-data queue.">
+                  Resolution
+                  <select id="performance-resolution" aria-label="Performance chart resolution">
+                    <option value="auto">Auto</option>
+                    <option value="5m">5 min</option>
+                    <option value="15m">15 min</option>
+                    <option value="1h">Hourly</option>
+                    <option value="1d">Daily</option>
+                    <option value="1wk">Weekly</option>
+                    <option value="1mo">Monthly</option>
+                  </select>
+                </label>
+                <button id="performance-reset-zoom" class="button secondary compact-button" type="button" title="Reset performance chart zoom">Reset zoom</button>
+              </div>
+            </div>
+            <div id="performance-summary" class="performance-summary"></div>
+            <p id="performance-coverage-note" class="chart-note"></p>
+            <p id="analytics-note" class="chart-note"></p>
+            <p id="performance-resolution-note" class="chart-note"></p>
+            <div id="benchmark-selector" class="benchmark-selector"></div>
+            <div id="performance-legend" class="performance-legend"></div>
+            <div class="performance-chart-shell">
+              <canvas id="performance-chart" class="line-chart" width="1280" height="520" aria-label="Portfolio cumulative percentage return over time"></canvas>
+              <div id="performance-tooltip" class="chart-tooltip" hidden></div>
+            </div>
+          </section>
+          <div class="layout-two">
+            <section class="panel">
+              <h3>Holdings</h3>
+              <div id="holdings-table" class="table-wrap"></div>
+            </section>
+            <section class="panel">
+              <h3>Allocation</h3>
+              <div id="allocation-bars" class="bar-list"></div>
+            </section>
+          </div>
+          <section class="panel">
+            <h3>Cash And Activity</h3>
+            <div id="activity-feed" class="activity-feed"></div>
+          </section>
+        </section>
+
+        <section id="entry" class="page">
+          <div class="page-head"><div><h2>Manual Portfolio Entry</h2><p>Build a durable account ledger here. Use dated entries whenever possible so long-range performance can distinguish invested capital, idle cash, and market growth.</p></div></div>
+          <section class="panel entry-guide">
+            <div><strong>Add Lot</strong><span>Record an existing holding and its cost basis without changing account cash.</span></div>
+            <div><strong>Manual Trade</strong><span>Record a buy or sell that changes cash and creates trade history.</span></div>
+            <div><strong>Cash Ledger</strong><span>Record deposits, withdrawals, dividends, interest, and unused cash.</span></div>
+          </section>
+          <div class="entry-grid">
+            <form id="lot-form" class="panel form-grid">
+              <h3>Add Lot</h3>
+              <label>Ticker<input name="ticker" required></label>
+              <label>Quantity<input name="quantity" type="number" min="0" step="0.0001" required></label>
+              <label>Purchase Price<input name="purchase_price" type="number" min="0" step="0.01" required></label>
+              <label>Fees<input name="fees" type="number" min="0" step="0.01" value="0"></label>
+              <label>Purchased At<input name="purchased_at" type="date"></label>
+              <label>Asset Class<input name="asset_class" value="equity"></label>
+              <label class="span-2">Notes<input name="notes"></label>
+              <button class="button primary" type="submit">Add lot</button>
+            </form>
+
+            <form id="cash-form" class="panel form-grid">
+              <h3>Cash Ledger</h3>
+              <label>Type<select name="transaction_type"><option>deposit</option><option>withdrawal</option><option>transfer_in</option><option>transfer_out</option><option>dividend</option><option>interest</option><option>fee</option><option>tax</option><option>adjustment_in</option><option>adjustment_out</option></select></label>
+              <label>Amount<input name="amount" type="number" min="0" step="0.01" required></label>
+              <label>Occurred At<input name="occurred_at" type="date"></label>
+              <label>Currency<input name="currency" maxlength="3" placeholder="USD"></label>
+              <label class="span-2">Notes<input name="notes"></label>
+              <button class="button primary" type="submit">Add cash entry</button>
+            </form>
+
+            <form id="trade-form" class="panel form-grid">
+              <h3>Manual Trade</h3>
+              <label>Ticker<input name="ticker" required></label>
+              <label>Side<select name="side"><option>buy</option><option>sell</option></select></label>
+              <label>Quantity<input name="quantity" type="number" min="0" step="0.0001" required></label>
+              <label>Price<input name="price" type="number" min="0" step="0.01" required></label>
+              <label>Fees<input name="fees" type="number" min="0" step="0.01" value="0"></label>
+              <label>Occurred At<input name="occurred_at" type="date"></label>
+              <label>Asset Class<input name="asset_class" value="equity"></label>
+              <label class="span-2">Notes<input name="notes"></label>
+              <button class="button primary" type="submit">Record trade</button>
+            </form>
+
+            <form id="settings-form" class="panel form-grid">
+              <h3>Settings</h3>
+              <label>Risk Free Rate<input name="risk_free_rate" type="number" step="0.0001" min="-1" max="1"></label>
+              <label>Benchmarks<input name="benchmark_symbols" placeholder="SPY, QQQ, IWM"></label>
+              <label>Cash Target<input name="cash_target_pct" type="number" step="0.001" min="0" max="1"></label>
+              <button class="button primary" type="submit">Save settings</button>
+            </form>
+
+            <form id="csv-form" class="panel form-grid">
+              <h3>CSV Upload</h3>
+              <label class="span-2">Positions CSV<input name="file" type="file" accept=".csv,text/csv" required></label>
+              <button class="button secondary" type="submit">Upload positions</button>
+            </form>
+          </div>
+          <div class="layout-two">
+            <section class="panel"><h3>Lots</h3><div id="lots-table" class="table-wrap"></div></section>
+            <section class="panel"><h3>Trade History</h3><div id="trade-table" class="table-wrap"></div></section>
+          </div>
+        </section>
+
+        <section id="risk" class="page">
+          <div class="page-head">
+            <div>
+              <h2>Risk Analysis</h2>
+              <p>Use cached market history to estimate volatility, covariance, and correlations for the tickers in this portfolio. Choose a longer range for steadier risk estimates; use the manual box only when you want to test your own price history.</p>
+            </div>
+            <details class="graph-customizer">
+              <summary>Customize graphs</summary>
+              <label><input type="checkbox" data-graph-toggle="risk-volatility" checked> Annualized volatility</label>
+              <label><input type="checkbox" data-graph-toggle="risk-cleaned-correlation" checked> Cleaned correlation</label>
+              <label><input type="checkbox" data-graph-toggle="risk-raw-correlation" checked> Raw correlation</label>
+              <label><input type="checkbox" data-graph-toggle="risk-covariance" checked> Annualized covariance</label>
+            </details>
+          </div>
+          <div class="layout-two">
+            <form id="risk-form" class="panel form-grid">
+              <h3>Risk Inputs</h3>
+              <label class="span-2" title="Defaults to the tickers currently held in this portfolio.">Tickers<input name="tickers" placeholder="AAPL, MSFT, BND"><span class="field-help">Leave unchanged to analyze your current holdings.</span></label>
+              <label title="The market-history range used when manual prices are blank.">History Range<select name="history_range"><option value="month">1 month</option><option value="ytd">YTD</option><option value="year" selected>1 year</option><option value="five_year">5 years</option><option value="max">Max since 2005</option></select><span class="field-help">One year is usually a useful first pass.</span></label>
+              <label class="checkbox-label" title="RMT cleaning reduces noise in the correlation matrix when samples are limited."><input name="use_rmt_cleaning" type="checkbox" checked> RMT clean<span class="field-help">Keeps stronger common signals and smooths noisy correlations.</span></label>
+              <label class="span-2" title="Optional override. Each row is one date, each column must match the ticker order above.">Manual Prices<textarea name="prices" rows="7" placeholder="Optional: 180,410,72
+181,412,71.9
+179,415,72.1"></textarea><span class="field-help">Blank means the app uses cached yfinance history and avoids asking you to type prices.</span></label>
+              <button class="button primary" type="submit">Analyze risk</button>
+            </form>
+            <section class="panel"><h3>Risk Summary</h3><p class="chart-note">Portfolio volatility uses your current position weights and the covariance matrix below. Annualized volatility scales daily movement by the square root of 252 trading days.</p><div id="risk-summary" class="result-grid"></div></section>
+          </div>
+          <section class="panel graph-panel" data-graph-panel="risk-volatility"><h3>Annualized Volatility</h3><p class="chart-note">Bars estimate each holding's typical one-year volatility from the selected history. Higher values mean a wider range of likely price movement.</p><div id="risk-volatility" class="bar-list"></div></section>
+          <section class="panel graph-panel" data-graph-panel="risk-cleaned-correlation"><h3>Portfolio Correlation</h3><p class="chart-note">This is the cleaned correlation view when RMT cleaning is enabled. Values near 1 move together, near -1 move opposite, and near 0 are less related.</p><div id="correlation-heatmap" class="matrix-grid"></div></section>
+          <section class="panel graph-panel" data-graph-panel="risk-raw-correlation"><h3>Raw Correlation</h3><p class="chart-note">The uncleaned matrix preserves the direct sample estimate so you can compare it with the RMT-cleaned view.</p><div id="raw-correlation-heatmap" class="matrix-grid"></div></section>
+          <section class="panel graph-panel" data-graph-panel="risk-covariance"><h3>Annualized Covariance</h3><p class="chart-note">Annualized covariance describes how pairs of holdings vary together. Small decimals are shown with extra precision.</p><div id="risk-covariance-heatmap" class="matrix-grid"></div></section>
+        </section>
+
+        <section id="relativistic-bs" class="page">
+          <div class="page-head">
+            <div>
+              <h2>Options Suite</h2>
+              <p>Price option chains, compare normal and relativistic Black-Scholes, and inspect volatility, volume, gamma exposure, and implied-volatility surfaces from cached market data.</p>
+            </div>
+            <details class="graph-customizer">
+              <summary>Customize graphs</summary>
+              <label><input type="checkbox" data-graph-toggle="options-model-price" checked> Model prices</label>
+              <label><input type="checkbox" data-graph-toggle="options-smile" checked> Volatility smile</label>
+              <label><input type="checkbox" data-graph-toggle="options-volume" checked> Cumulative volume</label>
+              <label><input type="checkbox" data-graph-toggle="options-gamma" checked> Gamma exposure</label>
+              <label><input type="checkbox" data-graph-toggle="options-iv-surface" checked> IV surface</label>
+              <label><input type="checkbox" data-graph-toggle="options-history-iv" checked> ATM IV history</label>
+              <label><input type="checkbox" data-graph-toggle="options-history-gamma" checked> Gamma history</label>
+              <label><input type="checkbox" data-graph-toggle="options-history-volume" checked> Volume history</label>
+              <label><input type="checkbox" data-graph-toggle="options-history-price" checked> ATM pricing history</label>
+            </details>
+          </div>
+
+          <div class="relbs-copy">
+            <p><strong>Normal Black-Scholes</strong> is the baseline model most option screens reference for theoretical value and implied volatility.</p>
+            <p><strong>Relativistic Black-Scholes</strong> keeps the same inputs but applies a correction controlled by <code>c_m</code>; larger <code>c_m</code> moves the result closer to normal Black-Scholes.</p>
+            <p><strong>Options-suite charts</strong> use listed implied volatility, volume, and open interest when yfinance contracts are available. Sparse chains can make these views noisy, so treat them as diagnostics rather than trading signals.</p>
+          </div>
+
+          <form id="relativistic-bs-form" class="panel form-grid relativistic-bs-controls">
+            <h3>Model Controls</h3>
+            <label title="Ticker to price. Leave blank to use the first priced holding in the portfolio.">Symbol<input id="relativistic-bs-symbol" name="symbol" placeholder="Optional holding symbol" title="Valid value: a ticker in this portfolio, such as AAPL or BRK_B."></label>
+            <label title="This only chooses the side used for the small ATM diagnostic summary. The chain and chart always show both calls and puts.">Diagnostic Focus<select id="relativistic-bs-option-type" name="option_type" title="Valid values: Call or Put. Both are shown in the option chain."><option value="call">Call</option><option value="put">Put</option></select><span class="field-help">Both calls and puts are always displayed.</span></label>
+            <label title="Calendar date when the option expires.">Expiry Date<input id="relativistic-bs-expiry-date" name="expiry_date" type="date" required title="Valid value: any future calendar date. If yfinance lacks that exact expiry, the nearest listed expiry is used."><span class="field-help">Use a future listed option date when possible.</span></label>
+            <label title="Annual risk-free rate as a decimal.">Risk-Free Rate<input id="relativistic-bs-rate" name="rate" type="number" step="any" min="-1" max="1" inputmode="decimal" value="0.05" title="Valid value: decimal annual rate, such as 0.05 for 5% or 0.0425 for 4.25%."><span class="field-help">Decimal annual rate, not percent text.</span></label>
+            <label title="Annualized volatility used by the model.">Baseline Volatility<input id="relativistic-bs-sigma" name="sigma" type="number" min="0.0001" max="5" step="any" inputmode="decimal" value="0.15" title="Valid value: positive decimal volatility, such as 0.20 for 20% annual volatility."><span class="field-help">Try 0.10 to 0.80 for most equities.</span></label>
+            <label title="Relativistic correction strength. Larger values approach normal Black-Scholes.">c_m<input id="relativistic-bs-cm" name="c_m" type="number" min="0.0001" max="100" step="any" inputmode="decimal" value="2.5" title="Valid value: positive number. Higher values reduce the correction; lower values make it stronger."><span class="field-help">Higher means closer to normal BS.</span></label>
+            <label title="Lowest strike to include as a multiple of spot when generated strikes are used or yfinance strikes are filtered.">Min Strike x Spot<input id="relativistic-bs-strike-min-pct" name="strike_min_pct" type="number" min="0.05" max="5" step="any" inputmode="decimal" value="0.7" title="Valid value: positive decimal multiplier, such as 0.70 for 70% of spot."><span class="field-help">Only used to filter/generate strikes.</span></label>
+            <label title="Highest strike to include as a multiple of spot when generated strikes are used or yfinance strikes are filtered.">Max Strike x Spot<input id="relativistic-bs-strike-max-pct" name="strike_max_pct" type="number" min="0.05" max="5" step="any" inputmode="decimal" value="1.3" title="Valid value: positive decimal multiplier above the minimum, such as 1.30 for 130% of spot."><span class="field-help">Must be larger than min strike.</span></label>
+            <label title="Choose how much smooth model detail to calculate. Listed market IV, volume, and gamma always use real listed strikes.">Strike Detail<select id="relativistic-bs-strike-detail" name="strike_detail"><option value="listed">Listed</option><option value="auto" selected>Auto</option><option value="dense">Dense</option></select><span class="field-help">Auto uses up to 101 model points; Dense uses up to 200.</span></label>
+            <label title="Number of listed expirations to include in the implied-volatility surface.">Surface Expiries<input id="relativistic-bs-surface-expiries" name="surface_expiries" type="number" min="1" max="8" step="1" value="4" title="Valid value: whole number from 1 to 8. More expiries can make the first live fetch slower."><span class="field-help">Used for the IV surface.</span></label>
+            <label title="Historical price range used for realized-volatility estimates.">History Period<select id="relativistic-bs-history-period" name="history_period" title="Valid values: 6mo, 1y, 2y, or 5y."><option value="6mo">6 months</option><option value="1y" selected>1 year</option><option value="2y">2 years</option><option value="5y">5 years</option></select><span class="field-help">Used for baseline-vol guidance.</span></label>
+            <label class="checkbox-label" title="When enabled, the backend tries to load the listed option chain from yfinance using Redis cache and account-level rate limiting."><input id="relativistic-bs-live-chain" name="use_market_chain" type="checkbox" checked> Use live option chain<span class="field-help">Cached/rate-limited yfinance contracts.</span></label>
+            <button class="button primary" type="submit">Run options suite</button>
+            <button id="relativistic-bs-force-refresh" class="button secondary" type="button">Refresh live chain</button>
+          </form>
+
+          <div class="layout-two">
+            <section class="panel">
+              <h3>Summary</h3>
+              <div id="relativistic-bs-summary" class="metric-grid"></div>
+              <div id="relativistic-bs-warnings" class="activity-feed"></div>
+            </section>
+            <section class="panel">
+              <h3>Chain Diagnostics</h3>
+              <div id="relativistic-bs-diagnostics" class="result-grid"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <h3>Baseline Volatility Guide</h3>
+            <p class="chart-note">Use these estimates to choose the model's baseline volatility. At-the-money market IV usually explains current option prices best; realized volatility is a fallback when contracts are thin or stale.</p>
+            <div id="relativistic-bs-vol-guide" class="vol-guide-grid"></div>
+          </section>
+
+          <section class="panel graph-panel" data-graph-panel="options-model-price">
+            <h3>Call and Put Model Prices</h3>
+            <p class="chart-note">The model-price curves show how normal and relativistic Black-Scholes compare across listed strikes. Market dots appear when bid/ask or last prices are available.</p>
+            <div id="relativistic-bs-chart" class="relbs-chart"></div>
+          </section>
+
+          <section class="panel graph-panel" data-graph-panel="options-smile">
+              <h3>Volatility Smile</h3>
+              <p class="chart-note">The smile shows listed implied volatility by strike. A curve above your baseline volatility means the model will usually underprice those contracts unless sigma is raised.</p>
+              <div id="relativistic-bs-smile-chart" class="relbs-chart"></div>
+          </section>
+          <section class="panel graph-panel" data-graph-panel="options-volume">
+              <h3>Cumulative Volume</h3>
+              <p class="chart-note">Bars show same-chain call and put volume at each strike; cumulative lines reveal where activity clusters across the chain.</p>
+              <div id="relativistic-bs-volume-chart" class="relbs-chart"></div>
+          </section>
+
+          <section class="panel graph-panel" data-graph-panel="options-gamma">
+              <h3>Gamma Exposure</h3>
+              <p class="chart-note">Gamma exposure estimates how open interest may amplify hedging pressure near each strike. Positive bars are call exposure; negative bars are put exposure. Drag across the chart, use the range slider, or scroll over the plot to zoom into a strike cluster.</p>
+              <div id="relativistic-bs-gamma-chart" class="relbs-chart"></div>
+          </section>
+          <section class="panel graph-panel" data-graph-panel="options-iv-surface">
+              <h3>Implied Volatility Surface</h3>
+              <p class="chart-note">The surface compares average market IV across moneyness and expiration. Peaks show where the chain prices more uncertainty.</p>
+              <div id="relativistic-bs-iv-surface-chart" class="relbs-chart"></div>
+          </section>
+
+          <section class="panel options-history-controls">
+            <div>
+              <h3>Saved Chain History</h3>
+              <p class="chart-note">These dated charts use snapshots captured when you run or refresh the suite. Changing resolution and zoom reads saved data only.</p>
+            </div>
+            <label>Resolution<select id="relativistic-bs-history-resolution"><option value="auto">Auto</option><option value="raw">Raw captures</option><option value="hour">Hourly</option><option value="day">Daily</option><option value="week">Weekly</option></select></label>
+            <label>Lookback<select id="relativistic-bs-history-lookback"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365" selected>1 year</option></select></label>
+            <p id="relativistic-bs-history-note" class="chart-note"></p>
+          </section>
+          <section class="panel graph-panel" data-graph-panel="options-history-iv"><h3>ATM Implied Volatility History</h3><p class="chart-note">Tracks the at-the-money implied volatility observed in saved chains over time.</p><div id="relativistic-bs-history-iv-chart" class="relbs-chart"></div></section>
+          <section class="panel graph-panel" data-graph-panel="options-history-gamma"><h3>Total Gamma Exposure History</h3><p class="chart-note">Tracks net estimated gamma exposure across each saved chain.</p><div id="relativistic-bs-history-gamma-chart" class="relbs-chart"></div></section>
+          <section class="panel graph-panel" data-graph-panel="options-history-volume"><h3>Chain Volume History</h3><p class="chart-note">Tracks total listed contract volume captured for the selected expiration.</p><div id="relativistic-bs-history-volume-chart" class="relbs-chart"></div></section>
+          <section class="panel graph-panel" data-graph-panel="options-history-price"><h3>ATM Call Pricing History</h3><p class="chart-note">Compares the saved market midpoint with Black-Scholes and relativistic model prices at the nearest-to-spot strike.</p><div id="relativistic-bs-history-price-chart" class="relbs-chart"></div></section>
+
+          <section class="panel">
+            <h3>Option Chain</h3>
+            <div id="relativistic-bs-surface" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="heatmap" class="page">
+          <div class="page-head">
+            <h2>Portfolio Heatmap</h2>
+            <form id="heatmap-form" class="inline-form">
+              <select name="group_by"><option value="sector">Sector</option><option value="industry">Industry</option><option value="asset_class">Asset class</option></select>
+              <button class="button secondary" type="submit">Build heatmap</button>
+            </form>
+          </div>
+          <section class="panel quote-panel compact">
+            <div class="section-head"><h3>Quote Check</h3><span id="heatmap-quote-status" class="pill muted">No quotes</span></div>
+            <div id="heatmap-quote-snapshot" class="quote-snapshot compact"></div>
+          </section>
+          <section class="panel"><div id="heatmap-grid" class="heatmap-grid"></div></section>
+        </section>
+
+        <section id="optimize" class="page">
+          <div class="page-head"><h2>Optimization</h2></div>
+          <div class="layout-two">
+            <form id="optimization-form" class="panel form-grid">
+              <h3>Target Allocation</h3>
+              <label>Objective<select name="objective"><option value="equal_weight">Equal weight</option><option value="min_volatility">Min volatility</option><option value="max_sharpe">Max sharpe</option></select></label>
+              <label>Min Weight<input name="min_weight" type="number" min="0" max="1" step="0.01" value="0"></label>
+              <label>Max Weight<input name="max_weight" type="number" min="0" max="1" step="0.01" value="1"></label>
+              <label>Risk Free Rate<input name="risk_free_rate" type="number" step="0.0001"></label>
+              <button class="button primary" type="submit">Optimize</button>
+            </form>
+            <section class="panel"><h3>Allocation Deltas</h3><div id="optimization-results" class="table-wrap"></div></section>
+          </div>
+        </section>
+
+        <section id="simulate" class="page">
+          <div class="page-head"><h2>Trade Simulation</h2></div>
+          <div class="layout-two">
+            <form id="simple-impact-form" class="panel form-grid">
+              <h3>Trade Impact</h3>
+              <label>Ticker<input name="symbol" required></label>
+              <label>Side<select name="side"><option>buy</option><option>sell</option></select></label>
+              <label>Quantity<input name="quantity" type="number" min="0" step="0.0001" required></label>
+              <label>Price<input name="price" type="number" min="0" step="0.01" required></label>
+              <label>Slippage bps<input name="estimated_slippage_bps" type="number" min="0" step="0.1" value="5"></label>
+              <label>Fee bps<input name="fee_rate_bps" type="number" min="0" step="0.1" value="1"></label>
+              <button class="button primary" type="submit">Simulate impact</button>
+            </form>
+            <section class="panel"><h3>Impact Result</h3><div id="simple-impact-result" class="result-grid"></div></section>
+          </div>
+          <div class="layout-two">
+            <form id="risk-simulation-form" class="panel form-grid">
+              <h3>Risk Simulation</h3>
+              <label>Ticker<input name="ticker" required></label>
+              <label>Side<select name="side"><option>buy</option><option>sell</option></select></label>
+              <label>Quantity<input name="quantity" type="number" min="0" step="0.0001"></label>
+              <label>Notional<input name="notional" type="number" min="0" step="0.01"></label>
+              <label class="span-2">Covariance JSON<textarea name="covariance" rows="6"></textarea></label>
+              <button class="button primary" type="submit">Simulate risk</button>
+            </form>
+            <section class="panel"><h3>Risk Result</h3><div id="risk-simulation-result" class="bar-list"></div></section>
+          </div>
+        </section>
+
+        <section id="market" class="page">
+          <div class="page-head">
+            <h2>Market Data</h2>
+            <button id="market-refresh" class="button secondary" type="button">Queue refresh</button>
+          </div>
+          <div class="layout-two">
+            <section class="panel"><h3>Quotes</h3><div id="quotes-table" class="table-wrap"></div></section>
+            <section class="panel"><h3>Background Jobs</h3><div id="jobs-list" class="activity-feed"></div></section>
+          </div>
+        </section>
+
+        <section id="account" class="page">
+          <div class="page-head"><h2>Account</h2></div>
+          <div class="layout-two">
+            <section class="panel"><h3>Profile</h3><div id="account-profile" class="result-grid"></div><div class="theme-control"><div><strong>Display Mode</strong><span id="theme-status">Light mode</span></div><button id="theme-toggle" class="button secondary" type="button" aria-pressed="false">Switch to dark</button></div><button id="request-verification" class="button secondary" type="button">Request verification</button></section>
+            <form id="verification-confirm-form" class="panel form-grid">
+              <h3>Email Verification</h3>
+              <label class="span-2">Token<input name="token"></label>
+              <button class="button primary" type="submit">Confirm email</button>
+            </form>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
+  <script src="/static/app.js?v=client-history-options-ui-2026-06-01" defer></script>
+</body>
+</html>

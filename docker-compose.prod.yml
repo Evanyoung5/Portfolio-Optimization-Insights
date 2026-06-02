@@ -1,0 +1,99 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://portfolio:${POSTGRES_PASSWORD}@postgres:5432/portfolio
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+    depends_on:
+      - postgres
+
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://portfolio:${POSTGRES_PASSWORD}@postgres:5432/portfolio
+      REDIS_URL: redis://redis:6379/0
+      PORTFOLIO_REPOSITORY: postgres
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS}
+      APP_HOSTS: ${APP_HOSTS}
+      ENABLE_HSTS: "true"
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      AUTH_DEV_EXPOSE_TOKENS: "false"
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      MARKET_DATA_CACHE_TTL_SECONDS: ${MARKET_DATA_CACHE_TTL_SECONDS:-900}
+      MARKET_DATA_USER_REFRESH_LIMIT_PER_MINUTE: ${MARKET_DATA_USER_REFRESH_LIMIT_PER_MINUTE:-5}
+      MARKET_DATA_USER_REFRESH_LIMIT_PER_DAY: ${MARKET_DATA_USER_REFRESH_LIMIT_PER_DAY:-100}
+      MARKET_DATA_PORTFOLIO_REFRESH_MIN_SECONDS: ${MARKET_DATA_PORTFOLIO_REFRESH_MIN_SECONDS:-300}
+      MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE:-30}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "app.background.worker"]
+    environment:
+      DATABASE_URL: postgresql://portfolio:${POSTGRES_PASSWORD}@postgres:5432/portfolio
+      REDIS_URL: redis://redis:6379/0
+      PORTFOLIO_REPOSITORY: postgres
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      BACKGROUND_QUEUE_NAME: portfolio-jobs
+      MARKET_DATA_CACHE_TTL_SECONDS: ${MARKET_DATA_CACHE_TTL_SECONDS:-900}
+      MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE:-30}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: portfolio
+      POSTGRES_USER: portfolio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
