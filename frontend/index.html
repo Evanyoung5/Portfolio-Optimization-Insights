@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portfolio Optimization</title>
-  <script src="/static/theme-init.js?v=client-splash-2026-06-19-2"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=client-splash-2026-06-19-2">
+  <script src="/static/theme-init.js?v=client-home-2026-06-20-5"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=client-home-2026-06-20-5">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -19,6 +19,12 @@
       </div>
     </div>
     <div class="top-actions">
+      <div id="landing-top-actions" class="landing-top-actions">
+        <button id="landing-nav-overview" class="topbar-link" type="button">Overview</button>
+        <button id="landing-nav-process" class="topbar-link" type="button">How it works</button>
+        <button id="landing-nav-access" class="topbar-link" type="button">Sign in</button>
+        <button id="landing-demo-top" class="button primary" type="button">View demo</button>
+      </div>
       <button id="sidebar-toggle" class="icon-button" type="button" title="Collapse portfolio sidebar" aria-pressed="false" aria-label="Collapse portfolio sidebar">&#9776;</button>
       <span id="runtime-pill" class="pill muted">Runtime unknown</span>
       <span id="user-pill" class="pill muted">Signed out</span>
@@ -29,97 +35,246 @@
   </header>
 
   <main id="auth-screen" class="auth-screen">
-    <section class="auth-panel">
-      <div class="auth-shell">
-        <section class="splash-story">
-          <div class="splash-hero">
-            <span class="splash-eyebrow">Portfolio intelligence for real investors</span>
-            <h2>See your portfolio as a living system, not just a list of positions.</h2>
-            <p>Track lots and cost basis, compare performance against major indexes, study covariance and concentration, test optimization targets, explore options and bond structures, and simulate trades before you commit capital.</p>
-            <div class="splash-actions">
-              <button id="demo-start" class="button primary splash-demo-button" type="button">Start interactive demo</button>
-              <div class="splash-demo-note">
-                <strong>Best first step for new visitors</strong>
-                <span>Open a guided sample account, place temporary demo trades, inspect every tab, and leave without creating an account.</span>
+    <section class="auth-panel home-shell">
+      <section class="home-band home-hero-band">
+        <div class="home-container home-hero-layout">
+          <div class="home-hero-copy">
+            <span class="splash-eyebrow">Private portfolio oversight</span>
+            <h2>A private workspace for portfolio records, performance, and risk.</h2>
+            <p>Bring together brokerage exports, lot-level cost basis, cash activity, benchmark-relative performance, and deeper portfolio analysis in a format built for regular account review.</p>
+            <div class="home-hero-actions">
+              <button id="demo-start" class="button primary splash-demo-button" type="button">Open interactive demo</button>
+              <button id="home-signin-button" class="button ghost" type="button">Sign in to your workspace</button>
+            </div>
+            <div class="home-hero-points">
+              <div><strong>Import brokerage records</strong><span>Start from Schwab, Fidelity, E*TRADE, or Coinbase exports.</span></div>
+              <div><strong>Preserve cost basis and cash</strong><span>Keep lots, trades, dividends, and idle cash tied to the same ledger.</span></div>
+              <div><strong>Follow performance properly</strong><span>Compare the account against selected indexes across longer time ranges.</span></div>
+              <div><strong>Go deeper when needed</strong><span>Open risk, options, bond, and strategy tools without leaving the platform.</span></div>
+            </div>
+          </div>
+
+          <div class="home-preview-shell" aria-hidden="true">
+            <article class="home-preview-panel">
+              <div class="home-preview-head">
+                <div>
+                  <span class="desk-label">Illustrative workspace</span>
+                  <strong>Household Brokerage</strong>
+                </div>
+                <span class="hero-status">Daily quotes</span>
+              </div>
+              <section class="home-preview-chart-card">
+                <div class="home-preview-card-head">
+                  <span class="desk-label">Performance</span>
+                  <span class="home-preview-note">Portfolio and benchmarks</span>
+                </div>
+                <svg class="home-preview-chart" viewBox="0 0 520 220" preserveAspectRatio="none">
+                  <line class="hero-grid-line strong" x1="16" y1="26" x2="504" y2="26"></line>
+                  <line class="hero-grid-line" x1="16" y1="80" x2="504" y2="80"></line>
+                  <line class="hero-grid-line" x1="16" y1="134" x2="504" y2="134"></line>
+                  <line class="hero-grid-line strong" x1="16" y1="188" x2="504" y2="188"></line>
+                  <polyline class="hero-series benchmark" points="20,166 68,158 116,161 164,149 212,133 260,118 308,108 356,90 404,74 500,58"></polyline>
+                  <polyline class="hero-series cash" points="20,174 68,173 116,172 164,170 212,168 260,166 308,163 356,160 404,156 500,150"></polyline>
+                  <polyline class="hero-series portfolio" points="20,170 68,163 116,165 164,150 212,141 260,120 308,102 356,88 404,67 500,34"></polyline>
+                </svg>
+                <div class="hero-chart-axis">
+                  <span>2019</span>
+                  <span>2021</span>
+                  <span>2023</span>
+                  <span>Today</span>
+                </div>
+              </section>
+
+              <div class="home-preview-grid">
+                <section class="home-preview-card home-preview-card-metrics">
+                  <div class="home-preview-card-head">
+                    <span class="desk-label">Portfolio snapshot</span>
+                    <span class="home-preview-note">Current allocation</span>
+                  </div>
+                  <div class="home-preview-metrics">
+                    <div><strong>$412,480</strong><span>Total equity</span></div>
+                    <div><strong>0.86</strong><span>Portfolio beta</span></div>
+                    <div><strong>6.9%</strong><span>Cash reserve</span></div>
+                  </div>
+                </section>
+
+                <section class="home-preview-card">
+                  <div class="home-preview-card-head">
+                    <span class="desk-label">Top holdings</span>
+                    <span class="home-preview-note">By weight</span>
+                  </div>
+                  <div class="home-preview-list">
+                    <div><strong>VTI</strong><span>31%</span></div>
+                    <div><strong>BRK.B</strong><span>18%</span></div>
+                    <div><strong>IEF</strong><span>11%</span></div>
+                    <div><strong>NEM</strong><span>7%</span></div>
+                  </div>
+                </section>
+
+                <section class="home-preview-card">
+                  <div class="home-preview-card-head">
+                    <span class="desk-label">Daily heat map</span>
+                    <span class="home-preview-note">Latest move</span>
+                  </div>
+                  <div class="hero-heat-grid home-preview-heat-grid">
+                    <span class="up"></span><span class="up soft"></span><span class="flat"></span><span class="up"></span>
+                    <span class="down"></span><span class="up soft"></span><span class="up"></span><span class="flat"></span>
+                  </div>
+                </section>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="home-overview" class="home-band home-band-muted">
+        <div class="home-container">
+          <div class="home-section-intro">
+            <span class="feature-kicker">Platform overview</span>
+            <h3>Built around the way investors review an account over time</h3>
+            <p>Instead of separating record keeping from analysis, the platform keeps the account ledger, daily monitoring, and deeper portfolio work tied together.</p>
+          </div>
+          <div class="home-overview-grid">
+            <article class="home-overview-card">
+              <span class="feature-kicker">Track</span>
+              <h4>Keep lot-level records and cash history organized</h4>
+              <p>Portfolio records can hold lots, purchases, sales, dividends, transfers, and unused cash without breaking the performance history.</p>
+            </article>
+            <article class="home-overview-card">
+              <span class="feature-kicker">Analyze</span>
+              <h4>Review exposure, concentration, and trade impact</h4>
+              <p>Open the dashboard, risk views, heat map, and simulation tools when you want to understand how the account behaves, not only what it is worth.</p>
+            </article>
+            <article class="home-overview-card">
+              <span class="feature-kicker">Extend</span>
+              <h4>Use options, bonds, and strategy tools when needed</h4>
+              <p>Options analysis, bond monitoring, and isolated strategy work stay available without crowding the core portfolio workflow.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="home-process" class="home-band">
+        <div class="home-container">
+          <div class="home-section-intro home-section-intro-narrow">
+            <span class="feature-kicker">How it works</span>
+            <h3>From account setup to ongoing review</h3>
+            <p>The first-time flow is meant to mirror how investors already keep records, then expand into more detailed analysis only when it is useful.</p>
+          </div>
+          <div class="home-process-grid">
+            <article class="home-process-step">
+              <span class="home-step-number">01</span>
+              <h4>Create a secure account</h4>
+              <p>Sign in once so your portfolio records, settings, and saved analytics are available when you return.</p>
+            </article>
+            <article class="home-process-step">
+              <span class="home-step-number">02</span>
+              <h4>Choose a starting path</h4>
+              <p>After account creation, begin with a brokerage file, manual holdings, or an empty portfolio shell.</p>
+            </article>
+            <article class="home-process-step">
+              <span class="home-step-number">03</span>
+              <h4>Keep the ledger current</h4>
+              <p>Add trades, dividends, and cash movements so long-range performance and account growth stay meaningful.</p>
+            </article>
+            <article class="home-process-step">
+              <span class="home-step-number">04</span>
+              <h4>Open deeper tools as needed</h4>
+              <p>Use benchmarks, risk views, options analysis, and strategy tools when you want more than a basic holdings list.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="home-band home-band-accent">
+        <div class="home-container home-capability-layout">
+          <div class="home-capability-copy">
+            <span class="feature-kicker">Coverage</span>
+            <h3>The platform covers the core workflow first</h3>
+            <p>Daily portfolio review stays at the center, while the more technical tools sit behind it in a way that still feels coherent when you need them.</p>
+          </div>
+          <div class="home-capability-stack">
+            <article class="home-capability-card">
+              <strong>Dashboard and benchmarks</strong>
+              <span>Performance, allocation, beta, Sharpe ratio, volatility, and comparison against selected indexes.</span>
+            </article>
+            <article class="home-capability-card">
+              <strong>Entry and ledger tools</strong>
+              <span>Brokerage uploads, starter lots, manual trades, cash ledger entries, and flexible cost-basis tracking.</span>
+            </article>
+            <article class="home-capability-card">
+              <strong>Risk, options, bonds, and strategy</strong>
+              <span>Correlation, covariance, trade simulation, options-suite analysis, bond monitoring, and isolated idea testing.</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="home-access" class="home-band home-access-band">
+        <div class="home-container home-access-layout">
+          <div class="home-access-copy">
+            <span class="feature-kicker">Account access</span>
+            <h3>Sign in when you want your records waiting for you next time</h3>
+            <p>Accounts keep portfolio details encrypted, persistent, and ready when you return. If you are still deciding whether the workflow fits, the guided demo is the best first stop.</p>
+            <div class="home-access-actions">
+              <button id="home-access-demo" class="button primary" type="button">Open demo first</button>
+            </div>
+            <div class="home-start-grid">
+              <article class="home-start-card">
+                <strong>Import a brokerage file</strong>
+                <span>Best for existing accounts with an export ready to upload.</span>
+              </article>
+              <article class="home-start-card">
+                <strong>Enter holdings manually</strong>
+                <span>Best for starting from your current lots, dates, and cost basis.</span>
+              </article>
+              <article class="home-start-card">
+                <strong>Create an empty portfolio</strong>
+                <span>Best when you want to establish the account shell first and build from there.</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="home-access-stack">
+            <section class="panel home-login-panel">
+              <div class="auth-copy">
+                <span class="pill">Secure sign-in</span>
+                <h3>Return to saved portfolios and private analytics</h3>
+                <p>Sign in to continue with saved portfolio records, market data, and account history.</p>
+              </div>
+              <form id="login-form" class="form-grid dense-form auth-login-form">
+                <label>Email<input name="email" type="email" autocomplete="email" required></label>
+                <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+                <button class="button primary" type="submit">Log in</button>
+              </form>
+            </section>
+
+            <div class="home-auth-grid">
+              <form id="register-form" class="panel form-grid compact-form auth-secondary-form">
+                <h3>Create Secure Account</h3>
+                <p class="form-help span-2">After registration, you will choose how the first portfolio should begin: import, manual holdings, or an empty portfolio shell.</p>
+                <label>Email<input name="email" type="email" autocomplete="email" required></label>
+                <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number." required></label>
+                <button class="button secondary" type="submit">Register</button>
+              </form>
+
+              <div class="auth-utility-grid home-recovery-grid">
+                <form id="password-reset-request-form" class="panel form-grid compact-form auth-secondary-form">
+                  <h3>Password Reset</h3>
+                  <label>Email<input name="email" type="email" autocomplete="email" required></label>
+                  <button class="button secondary" type="submit">Request reset</button>
+                </form>
+                <form id="password-reset-confirm-form" class="panel form-grid compact-form auth-secondary-form">
+                  <h3>Set New Password</h3>
+                  <label>Token<input name="token"></label>
+                  <label>New Password<input name="new_password" type="password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number."></label>
+                  <button class="button secondary" type="submit">Set password</button>
+                </form>
               </div>
             </div>
           </div>
-
-          <div class="splash-proof">
-            <article class="splash-feature feature-primary">
-              <span class="feature-kicker">Purpose</span>
-              <h3>Built to connect portfolio decisions, risk, and performance</h3>
-              <p>The site is meant for investors who want one workspace for account history, benchmark context, market structure tools, and forward-looking scenario analysis.</p>
-            </article>
-            <article class="splash-feature">
-              <span class="feature-kicker">Track</span>
-              <h3>Private portfolio ledger</h3>
-              <p>Manual lots, cash movements, trade history, cost basis, idle cash, and account growth stay attached to your account.</p>
-            </article>
-            <article class="splash-feature">
-              <span class="feature-kicker">Analyze</span>
-              <h3>Risk, covariance, and heatmaps</h3>
-              <p>Measure volatility, cleaned correlation, trade impact, concentration, and daily movers in one place.</p>
-            </article>
-            <article class="splash-feature">
-              <span class="feature-kicker">Explore</span>
-              <h3>Options, bonds, and strategy lab</h3>
-              <p>Compare Black-Scholes against relativistic pricing, inspect implied volatility structure, and test lightweight strategy scenarios.</p>
-            </article>
-          </div>
-
-          <section class="panel splash-capabilities">
-            <div class="section-head">
-              <h3>What the platform covers</h3>
-              <span class="pill">Live tools</span>
-            </div>
-            <div class="splash-capability-grid">
-              <div><strong>Dashboard</strong><span>Performance, beta, Sharpe, volatility, benchmark comparison, and quote snapshots.</span></div>
-              <div><strong>Entry</strong><span>Manual lots, trades, cash ledger, brokerage CSV import, and flexible cost basis tracking.</span></div>
-              <div><strong>Risk</strong><span>RMT cleaning, covariance, correlation temperature maps, and risk-tolerance reweighting.</span></div>
-              <div><strong>Options Suite</strong><span>Live chains, IV history, gamma, volume, volatility smile, and IV surface views.</span></div>
-              <div><strong>Bond Monitor</strong><span>Public bond assets, ladders, barbells, duration context, and return modeling.</span></div>
-              <div><strong>Strategy Lab</strong><span>Scenario testing, overlays, and sandbox experimentation without touching saved holdings.</span></div>
-            </div>
-          </section>
-        </section>
-
-        <aside class="auth-rail">
-          <section class="panel auth-rail-panel">
-            <div class="auth-copy">
-              <span class="pill">Private workspace</span>
-              <h3>Sign in when you want persistence</h3>
-              <p>Your account keeps portfolio data private, encrypted, and available when you return.</p>
-            </div>
-            <form id="login-form" class="form-grid dense-form auth-login-form">
-              <label>Email<input name="email" type="email" autocomplete="email" required></label>
-              <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-              <button class="button primary" type="submit">Log in</button>
-            </form>
-          </section>
-
-          <form id="register-form" class="panel form-grid compact-form auth-secondary-form">
-            <h3>Create Account</h3>
-            <label>Email<input name="email" type="email" autocomplete="email" required></label>
-            <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number." required></label>
-            <button class="button secondary" type="submit">Register</button>
-          </form>
-
-          <div class="auth-utility-grid">
-            <form id="password-reset-request-form" class="panel form-grid compact-form auth-secondary-form">
-              <h3>Password Reset</h3>
-              <label>Email<input name="email" type="email" autocomplete="email" required></label>
-              <button class="button secondary" type="submit">Request reset</button>
-            </form>
-            <form id="password-reset-confirm-form" class="panel form-grid compact-form auth-secondary-form">
-              <h3>Set New Password</h3>
-              <label>Token<input name="token"></label>
-              <label>New Password<input name="new_password" type="password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number."></label>
-              <button class="button secondary" type="submit">Set password</button>
-            </form>
-          </div>
-        </aside>
-      </div>
+        </div>
+      </section>
     </section>
   </main>
 
@@ -134,12 +289,13 @@
       </section>
 
       <section class="sidebar-section">
-        <h2>Create</h2>
+        <h2>Add Portfolio</h2>
+        <p class="form-help">Once you already have portfolios here, this is the quickest way to add another portfolio shell.</p>
         <form id="create-portfolio-form" class="form-grid dense-form">
           <label>Name<input name="name" required placeholder="Taxable Brokerage"></label>
-          <label>Cash<input name="cash" type="number" min="0" step="0.01" value="0"></label>
+          <label>Opening Idle Cash<input name="cash" type="number" min="0" step="0.01" value="0"></label>
           <label>Currency<input name="base_currency" maxlength="3" value="USD"></label>
-          <button class="button primary" type="submit">Create portfolio</button>
+          <button class="button primary" type="submit">Create empty portfolio</button>
         </form>
       </section>
     </aside>
@@ -169,9 +325,62 @@
         <button class="tab" data-tab="account" type="button">Account</button>
       </nav>
 
-      <section id="no-portfolio" class="empty-state">
-        <h2>Create or select a portfolio</h2>
-        <p>The manual entry page will unlock once a private portfolio exists.</p>
+      <section id="no-portfolio" class="empty-state onboarding-state">
+        <div class="onboarding-intro">
+          <span class="splash-eyebrow">Portfolio setup</span>
+          <h2>Set up your first portfolio in the format that matches your records.</h2>
+          <p>A portfolio here usually represents one real-world account: a taxable brokerage, IRA, 401(k), crypto account, or another pool of assets you want to follow separately. You can begin with a brokerage file, enter holdings directly, or create the account shell first and add activity later.</p>
+          <div class="onboarding-step-grid">
+            <div><strong>1. Name the account</strong><span>Use the real-world label you already recognize, such as Roth IRA or Taxable Brokerage.</span></div>
+            <div><strong>2. Choose how to begin</strong><span>Import a file, enter holdings, or create an empty portfolio and fill it in afterward.</span></div>
+            <div><strong>3. Build the ledger over time</strong><span>Once the portfolio exists, you can add trades, cash movements, benchmarks, and the rest of the analysis tools.</span></div>
+          </div>
+        </div>
+
+        <div class="onboarding-grid">
+          <form id="create-portfolio-import-form" class="panel form-grid onboarding-card">
+            <h3>Import A Brokerage File</h3>
+            <p class="form-help">Best if you already have an export from Schwab, Fidelity, E*TRADE, or Coinbase. The app creates the portfolio first, then imports holdings immediately.</p>
+            <label>Portfolio Name<input name="name" required placeholder="Taxable Brokerage"></label>
+            <label>Currency<input name="base_currency" maxlength="3" value="USD"></label>
+            <label>Idle Cash (Optional)<input name="cash" type="number" min="0" step="0.01" value="0"></label>
+            <label class="span-2">Brokerage export<input name="file" type="file" accept=".csv,text/csv,.txt,text/plain" required></label>
+            <button class="button primary" type="submit">Create portfolio and import file</button>
+            <div id="onboarding-import-result" class="span-2 import-result" role="status" aria-live="polite"></div>
+          </form>
+
+          <form id="create-portfolio-lots-form" class="panel form-grid onboarding-card">
+            <h3>Enter Holdings Manually</h3>
+            <p class="form-help">Best if you want to start directly from your current positions. Add the lots you already own, including dates and cost basis, and the portfolio will be created with those holdings in place.</p>
+            <label>Portfolio Name<input name="name" required placeholder="Roth IRA"></label>
+            <label>Currency<input name="base_currency" maxlength="3" value="USD"></label>
+            <label>Idle Cash (Optional)<input name="cash" type="number" min="0" step="0.01" value="0"></label>
+            <div class="span-2 onboarding-lot-builder">
+              <div class="section-head">
+                <h4>Starter lots</h4>
+                <button id="portfolio-onboarding-add-row" class="button secondary compact-button" type="button">Add row</button>
+              </div>
+              <div class="table-wrap">
+                <table class="onboarding-lot-table">
+                  <thead>
+                    <tr><th>Ticker</th><th>Shares</th><th>Cost / Share</th><th>Date</th><th></th></tr>
+                  </thead>
+                  <tbody id="portfolio-onboarding-lot-rows"></tbody>
+                </table>
+              </div>
+            </div>
+            <button class="button primary" type="submit">Create portfolio with these holdings</button>
+          </form>
+        </div>
+
+        <form id="create-portfolio-empty-form" class="panel form-grid onboarding-card onboarding-card-empty">
+          <h3>Create An Empty Portfolio</h3>
+          <p class="form-help">Use this if you want to establish the portfolio shell first and add cash, lots, or imports afterward.</p>
+          <label>Name<input name="name" required placeholder="Old 401(k)"></label>
+          <label>Currency<input name="base_currency" maxlength="3" value="USD"></label>
+          <label>Opening Idle Cash<input name="cash" type="number" min="0" step="0.01" value="0"></label>
+          <button class="button secondary" type="submit">Create empty portfolio</button>
+        </form>
       </section>
 
       <div id="pages" hidden>
@@ -734,7 +943,7 @@
   </section>
 
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
-  <script src="/static/demo-data.js?v=client-splash-2026-06-19-2" defer></script>
-  <script src="/static/app.js?v=client-splash-2026-06-19-2" defer></script>
+  <script src="/static/demo-data.js?v=client-home-2026-06-20-5" defer></script>
+  <script src="/static/app.js?v=client-home-2026-06-20-5" defer></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const CLIENT_BUILD_ID = "client-splash-2026-06-19-2";
+const CLIENT_BUILD_ID = "client-home-2026-06-20-5";
 const THEME_STORAGE_KEY = "portfolio_theme";
 const SIDEBAR_STORAGE_KEY = "portfolio_sidebar_collapsed";
 const GRAPH_VISIBILITY_STORAGE_KEY = "portfolio_graph_visibility";
@@ -97,13 +97,17 @@ const appState = {
   performanceHistoryPending: {},
   performanceZoom: null,
   runtime: null,
+  apiAvailable: false,
   theme: document.documentElement.dataset.theme || localStorage.getItem(THEME_STORAGE_KEY) || "light",
   sidebarCollapsed: localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true",
+  mobileViewport: window.innerWidth <= 700,
+  mobileSidebarPrimed: false,
   graphVisibility: JSON.parse(localStorage.getItem(GRAPH_VISIBILITY_STORAGE_KEY) || "{}"),
   demoMode: false,
   demoTourActive: false,
   demoTourStep: 0,
   demoOptionsInput: null,
+  onboardingLotRowCounter: 0,
 };
 
 const DEMO_TOUR_STEPS = [
@@ -196,6 +200,7 @@ window.addEventListener("DOMContentLoaded", () => {
   applyGraphVisibility();
   normalizeNumericInputs();
   bindEvents();
+  resetOnboardingLotRows();
   setDefaultRelativisticBSExpiry();
   boot();
 });
@@ -247,6 +252,34 @@ function handleSidebarToggle() {
   applySidebarState({ persist: true });
 }
 
+function isMobileViewport() {
+  return window.innerWidth <= 700;
+}
+
+function syncResponsiveWorkspaceChrome() {
+  const mobile = isMobileViewport();
+  const authed = Boolean((appState.user && !appState.demoMode) || appState.demoMode);
+  const viewportChanged = mobile !== appState.mobileViewport;
+  appState.mobileViewport = mobile;
+  if (!authed) return;
+  if (mobile && (viewportChanged || !appState.mobileSidebarPrimed)) {
+    appState.sidebarCollapsed = true;
+    appState.mobileSidebarPrimed = true;
+    applySidebarState({ persist: false });
+    return;
+  }
+  if (!mobile && viewportChanged) {
+    applySidebarState({ persist: false });
+  }
+}
+
+function collapseSidebarForMobile() {
+  if (!isMobileViewport()) return;
+  appState.sidebarCollapsed = true;
+  appState.mobileSidebarPrimed = true;
+  applySidebarState({ persist: false });
+}
+
 function applySidebarState(options = {}) {
   const shell = $("#app-shell");
   const toggle = $("#sidebar-toggle");
@@ -286,6 +319,12 @@ function bindEvents() {
   $("#password-reset-request-form").addEventListener("submit", handlePasswordResetRequest);
   $("#password-reset-confirm-form").addEventListener("submit", handlePasswordResetConfirm);
   $("#demo-start").addEventListener("click", () => enterDemoMode({ restartTour: true }));
+  $("#landing-demo-top")?.addEventListener("click", () => enterDemoMode({ restartTour: true }));
+  $("#home-access-demo")?.addEventListener("click", () => enterDemoMode({ restartTour: true }));
+  $("#landing-nav-overview")?.addEventListener("click", () => scrollToLandingSection("#home-overview"));
+  $("#landing-nav-process")?.addEventListener("click", () => scrollToLandingSection("#home-process"));
+  $("#landing-nav-access")?.addEventListener("click", () => scrollToLandingSection("#home-access"));
+  $("#home-signin-button")?.addEventListener("click", () => scrollToLandingSection("#home-access"));
   $("#verification-confirm-form").addEventListener("submit", handleVerificationConfirm);
   $("#request-verification").addEventListener("click", handleVerificationRequest);
   $("#theme-toggle").addEventListener("click", handleThemeToggle);
@@ -304,6 +343,11 @@ function bindEvents() {
   $("#logout-button").addEventListener("click", logout);
   $("#refresh-workspace").addEventListener("click", () => loadWorkspace());
   $("#create-portfolio-form").addEventListener("submit", handleCreatePortfolio);
+  $("#create-portfolio-import-form").addEventListener("submit", handleCreatePortfolioFromCsv);
+  $("#create-portfolio-lots-form").addEventListener("submit", handleCreatePortfolioWithStarterLots);
+  $("#create-portfolio-empty-form").addEventListener("submit", handleCreateEmptyPortfolio);
+  $("#portfolio-onboarding-add-row").addEventListener("click", handleAddOnboardingLotRow);
+  $("#portfolio-onboarding-lot-rows").addEventListener("click", handleOnboardingLotRowClick);
   $("#lot-form").addEventListener("submit", handleAddLot);
   $("#cash-form").addEventListener("submit", handleAddCashTransaction);
   $("#trade-form").addEventListener("submit", handleAddTrade);
@@ -363,6 +407,7 @@ function bindEvents() {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
   });
   window.addEventListener("resize", () => {
+    syncResponsiveWorkspaceChrome();
     if (appState.portfolio && $("#dashboard")?.classList.contains("active")) renderDashboard();
     if (appState.portfolio && $("#strategy-lab")?.classList.contains("active")) renderStrategyLab();
     if (appState.demoTourActive) positionDemoTour();
@@ -412,12 +457,19 @@ function normalizedNumberString(value, step = "") {
 async function checkHealth() {
   try {
     const payload = await api("/health", { auth: false });
-    $("#api-status").textContent = payload.status === "ok" ? "API online" : "API reachable";
+    appState.apiAvailable = payload.status === "ok";
   } catch (error) {
-    $("#api-status").textContent = "API unavailable";
+    appState.apiAvailable = false;
   }
 
+  renderAuthState();
   await refreshRuntime({ retries: 3 });
+}
+
+function scrollToLandingSection(selector) {
+  const target = $(selector);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function loadStoredDemoSession() {
@@ -724,7 +776,7 @@ async function handleLogin(event) {
     const auth = await api("/auth/login", { method: "POST", body: payload, auth: false });
     setAuth(auth);
     await loadWorkspace();
-    toast("Logged in.");
+    toast(appState.portfolios.length ? "Logged in." : "Logged in. Choose a starting path for your first portfolio below.");
   } catch (error) {
     toast(error.message, true);
   }
@@ -738,7 +790,7 @@ async function handleRegister(event) {
     const auth = await api("/auth/register", { method: "POST", body: payload, auth: false });
     setAuth(auth);
     await loadWorkspace();
-    toast("Account created.");
+    toast(appState.portfolios.length ? "Account created." : "Account created. Start by importing a brokerage file or typing in your first holdings below.");
   } catch (error) {
     toast(error.message, true);
   }
@@ -884,6 +936,7 @@ async function selectPortfolio(portfolioId) {
   appState.selectedPortfolioId = portfolioId;
   localStorage.setItem("selected_portfolio_id", portfolioId);
   await loadPortfolio(portfolioId);
+  collapseSidebarForMobile();
 }
 
 async function loadPortfolio(portfolioId) {
@@ -982,16 +1035,95 @@ async function handleCreatePortfolio(event) {
     return;
   }
   try {
-    const payload = formObject(form);
-    payload.cash = numberValue(payload.cash);
-    payload.base_currency = (payload.base_currency || "USD").toUpperCase();
+    const payload = basePortfolioPayload(form);
     const created = await api("/portfolios", { method: "POST", body: payload });
-    appState.selectedPortfolioId = created.id;
-    localStorage.setItem("selected_portfolio_id", created.id);
     resetManualForm(form, { base_currency: "USD", cash: "0" });
-    await loadWorkspace();
-    toast("Portfolio created.");
+    await finishPortfolioCreation(created.id, { tabId: "entry" });
+    toast("Empty account created. Add holdings or import a brokerage file from the Entry tab whenever you're ready.");
   } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function handleCreateEmptyPortfolio(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (appState.demoMode) {
+    toast("The demo uses a single temporary portfolio. Sign in to create persistent portfolios.", true);
+    return;
+  }
+  try {
+    const payload = basePortfolioPayload(form);
+    const created = await api("/portfolios", { method: "POST", body: payload });
+    resetManualForm(form, { base_currency: "USD", cash: "0" });
+    await finishPortfolioCreation(created.id, { tabId: "entry" });
+    toast("Account created. You can add lots, trades, or a brokerage upload whenever you're ready.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function handleCreatePortfolioWithStarterLots(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (appState.demoMode) {
+    toast("The demo uses a single temporary portfolio. Sign in to create persistent portfolios.", true);
+    return;
+  }
+  try {
+    const payload = basePortfolioPayload(form);
+    payload.lots = readOnboardingLots(form);
+    if (!payload.lots.length) throw new Error("Add at least one holding row, or use the empty-account option instead.");
+    const created = await api("/portfolios", { method: "POST", body: payload });
+    resetManualForm(form, { base_currency: "USD", cash: "0" });
+    resetOnboardingLotRows();
+    await finishPortfolioCreation(created.id, { tabId: "dashboard" });
+    toast("Account created with starter lots. Quotes and performance will begin filling in automatically.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function handleCreatePortfolioFromCsv(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (appState.demoMode) {
+    toast("CSV import is disabled in the demo. Sign in to import a real portfolio.", true);
+    return;
+  }
+
+  let createdId = "";
+  const resultBox = $("#onboarding-import-result");
+  try {
+    if (resultBox) resultBox.textContent = "Creating the account and reading your brokerage file...";
+    const payload = basePortfolioPayload(form);
+    const file = form.elements.file?.files?.[0];
+    if (!file) throw new Error("Choose a brokerage export file to import.");
+
+    const created = await api("/portfolios", { method: "POST", body: payload });
+    createdId = created.id;
+    const data = new FormData();
+    data.append("file", file);
+    const result = await api(`/api/v1/portfolios/${createdId}/upload-csv`, {
+      method: "POST",
+      body: data,
+    });
+    resetManualForm(form, { base_currency: "USD", cash: "0" });
+    if (resultBox) {
+      const source = String(result.detected_format || "generic").replace(/^./, (letter) => letter.toUpperCase());
+      const warningText = (result.warnings || []).join(" ");
+      resultBox.innerHTML = `<strong>${escapeHtml(source)} import complete.</strong><span>Imported ${result.imported_positions} position${result.imported_positions === 1 ? "" : "s"} from ${result.rows_read || 0} row${result.rows_read === 1 ? "" : "s"}.</span>${warningText ? `<span>${escapeHtml(warningText)}</span>` : ""}`;
+    }
+    await finishPortfolioCreation(createdId, { tabId: "dashboard" });
+    toast("Account created and brokerage file imported. Quote refresh will run automatically.");
+  } catch (error) {
+    if (createdId) {
+      await finishPortfolioCreation(createdId, { tabId: "entry" }).catch(() => {});
+      if (resultBox) resultBox.textContent = `${error.message} The account shell was still created, so you can retry the import from the Entry tab.`;
+      toast(`${error.message} The account shell was created, so you can retry the import from the Entry tab.`, true);
+      return;
+    }
+    if (resultBox) resultBox.textContent = error.message;
     toast(error.message, true);
   }
 }
@@ -2126,6 +2258,8 @@ function renderRuntime(error = null) {
 function renderAuthState() {
   const realAuthed = Boolean(appState.user && !appState.demoMode);
   const authed = realAuthed || appState.demoMode;
+  const quickCreateSection = $("#create-portfolio-form")?.closest(".sidebar-section");
+  document.body.dataset.view = authed ? "workspace" : "landing";
   $("#auth-screen").hidden = authed;
   $("#app-shell").hidden = !authed;
   $("#auth-screen").setAttribute("aria-hidden", String(authed));
@@ -2134,9 +2268,11 @@ function renderAuthState() {
   $("#demo-tour-button").hidden = !appState.demoMode;
   $("#demo-exit-button").hidden = !appState.demoMode;
   $("#demo-banner").hidden = !appState.demoMode;
-  $("#create-portfolio-form").closest(".sidebar-section").hidden = appState.demoMode;
+  if (quickCreateSection) quickCreateSection.hidden = appState.demoMode || !appState.portfolios.length;
   $("#user-pill").textContent = authed ? (appState.demoMode ? "Demo session" : appState.user.email) : "Signed out";
   $("#user-pill").className = authed ? "pill" : "pill muted";
+  $("#api-status").textContent = authed ? (appState.apiAvailable ? "Service available" : "Service unavailable") : "Private portfolio workspace";
+  syncResponsiveWorkspaceChrome();
   if (authed) renderAccount();
 }
 
@@ -2167,7 +2303,7 @@ function renderAll() {
 function renderPortfolioList() {
   const list = $("#portfolio-list");
   if (!appState.portfolios.length) {
-    list.innerHTML = `<div class="activity-item"><strong>No portfolios</strong><span>Create one below.</span></div>`;
+    list.innerHTML = `<div class="activity-item"><strong>No portfolios yet</strong><span>Use the guided setup in the main workspace to import a file or add your first holdings.</span></div>`;
     return;
   }
   list.innerHTML = appState.portfolios.map((portfolio) => `
@@ -5243,6 +5379,94 @@ function formObject(form) {
     object[key] = typeof value === "string" ? value.trim() : value;
   });
   return object;
+}
+
+function basePortfolioPayload(form) {
+  const payload = formObject(form);
+  return {
+    name: payload.name,
+    base_currency: normalizeCurrency(payload.base_currency),
+    cash: numberValue(payload.cash),
+  };
+}
+
+function normalizeCurrency(value) {
+  return String(value || "USD").trim().toUpperCase() || "USD";
+}
+
+async function finishPortfolioCreation(portfolioId, options = {}) {
+  appState.selectedPortfolioId = portfolioId;
+  localStorage.setItem("selected_portfolio_id", portfolioId);
+  await loadWorkspace();
+  if (options.tabId) activateTab(options.tabId);
+}
+
+function handleAddOnboardingLotRow() {
+  appendOnboardingLotRow();
+}
+
+function handleOnboardingLotRowClick(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  const button = target ? target.closest("button[data-onboarding-remove-row]") : null;
+  if (!button) return;
+  const rows = $$("#portfolio-onboarding-lot-rows tr");
+  if (rows.length <= 1) {
+    resetOnboardingLotRows(1);
+    return;
+  }
+  button.closest("tr")?.remove();
+}
+
+function resetOnboardingLotRows(count = 3) {
+  const body = $("#portfolio-onboarding-lot-rows");
+  if (!body) return;
+  appState.onboardingLotRowCounter = 0;
+  body.innerHTML = "";
+  Array.from({ length: count }, () => appendOnboardingLotRow());
+}
+
+function appendOnboardingLotRow(values = {}) {
+  const body = $("#portfolio-onboarding-lot-rows");
+  if (!body) return;
+  appState.onboardingLotRowCounter += 1;
+  body.insertAdjacentHTML("beforeend", onboardingLotRowHtml(appState.onboardingLotRowCounter, values));
+  normalizeNumericInputs(body);
+}
+
+function onboardingLotRowHtml(rowId, values = {}) {
+  return `
+    <tr class="onboarding-lot-row" data-row-id="${rowId}">
+      <td><input data-lot-field="ticker" placeholder="AAPL" value="${escapeHtml(values.ticker || "")}"></td>
+      <td><input data-lot-field="quantity" type="number" min="0" step="0.0001" inputmode="decimal" placeholder="10" value="${escapeHtml(values.quantity || "")}"></td>
+      <td><input data-lot-field="purchase_price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="182.50" value="${escapeHtml(values.purchase_price || "")}"></td>
+      <td><input data-lot-field="purchased_at" type="date" value="${escapeHtml(values.purchased_at || "")}"></td>
+      <td><button class="icon-button" type="button" data-onboarding-remove-row="true" title="Remove row" aria-label="Remove starter lot row">-</button></td>
+    </tr>`;
+}
+
+function readOnboardingLots(form) {
+  const rows = $$("#portfolio-onboarding-lot-rows tr", form);
+  const lots = [];
+  rows.forEach((row) => {
+    const ticker = row.querySelector('[data-lot-field="ticker"]')?.value?.trim().toUpperCase() || "";
+    const quantityRaw = row.querySelector('[data-lot-field="quantity"]')?.value?.trim() || "";
+    const purchasePriceRaw = row.querySelector('[data-lot-field="purchase_price"]')?.value?.trim() || "";
+    const purchasedAt = row.querySelector('[data-lot-field="purchased_at"]')?.value?.trim() || "";
+    const touched = Boolean(ticker || quantityRaw || purchasePriceRaw || purchasedAt);
+    if (!touched) return;
+    if (!ticker || !quantityRaw || !purchasePriceRaw) {
+      throw new Error("Each starter lot row needs a ticker, share count, and cost per share, or it should be left blank.");
+    }
+    const lot = {
+      ticker,
+      quantity: numberValue(quantityRaw),
+      purchase_price: numberValue(purchasePriceRaw),
+      asset_class: "equity",
+    };
+    if (purchasedAt) lot.purchased_at = dateToIso(purchasedAt);
+    lots.push(lot);
+  });
+  return lots;
 }
 
 function parsePriceRows(raw) {

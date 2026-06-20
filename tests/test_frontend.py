@@ -31,6 +31,10 @@ def test_frontend_index_is_served(client):
     assert "performance-summary" in response.text
     assert "performance-tooltip" in response.text
     assert "performance-reset-zoom" in response.text
+    assert "create-portfolio-import-form" in response.text
+    assert "create-portfolio-lots-form" in response.text
+    assert "create-portfolio-empty-form" in response.text
+    assert "portfolio-onboarding-lot-rows" in response.text
     assert "risk-summary" in response.text
     assert "risk-covariance-heatmap" in response.text
     assert "raw-correlation-heatmap" in response.text
@@ -134,6 +138,10 @@ def test_frontend_assets_are_served(client):
     assert "dailyCloseByDate" in response.text
     assert "normalizeNumericInputs" in response.text
     assert "refreshSession" in response.text
+    assert "handleCreatePortfolioFromCsv" in response.text
+    assert "handleCreatePortfolioWithStarterLots" in response.text
+    assert "readOnboardingLots" in response.text
+    assert "resetOnboardingLotRows" in response.text
     assert "/api/v1/runtime" in response.text
 
 
