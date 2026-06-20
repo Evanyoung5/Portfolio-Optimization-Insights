@@ -97,6 +97,38 @@ body {
   background: var(--plot-bg);
 }
 
+:root[data-theme="dark"] .auth-screen {
+  background:
+    radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(240, 161, 74, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(13, 20, 18, 0.96), rgba(13, 20, 18, 1));
+}
+
+:root[data-theme="dark"] .splash-hero,
+:root[data-theme="dark"] .feature-primary {
+  background:
+    linear-gradient(135deg, rgba(45, 212, 191, 0.14), rgba(21, 31, 28, 0.96) 40%, rgba(240, 161, 74, 0.08)),
+    var(--surface);
+}
+
+:root[data-theme="dark"] .splash-feature,
+:root[data-theme="dark"] .auth-rail-panel,
+:root[data-theme="dark"] .auth-secondary-form {
+  background: rgba(21, 31, 28, 0.92);
+}
+
+:root[data-theme="dark"] .splash-demo-note {
+  background: rgba(17, 25, 22, 0.88);
+  border-color: rgba(45, 212, 191, 0.22);
+}
+
+:root[data-theme="dark"] .splash-eyebrow,
+:root[data-theme="dark"] .feature-kicker {
+  border-color: rgba(45, 212, 191, 0.24);
+  background: rgba(45, 212, 191, 0.1);
+  color: #8df4e7;
+}
+
 button,
 input,
 select,
@@ -171,14 +203,18 @@ small {
 }
 
 .auth-screen {
-  padding: 44px 24px;
+  padding: 40px 24px 56px;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(163, 95, 0, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(240, 244, 243, 0.75), rgba(246, 247, 249, 0.98));
 }
 
 .auth-panel {
-  width: min(1120px, 100%);
+  width: min(1240px, 100%);
   margin: 0 auto;
   display: grid;
-  gap: 24px;
+  gap: 28px;
 }
 
 .auth-copy {
@@ -188,6 +224,171 @@ small {
 
 .auth-copy h2 {
   font-size: clamp(1.6rem, 3vw, 2.6rem);
+}
+
+.auth-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.82fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.splash-story,
+.splash-proof,
+.auth-rail,
+.auth-utility-grid,
+.splash-capability-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.splash-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  border-radius: 8px;
+  padding: 28px;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.96) 36%, rgba(163, 95, 0, 0.08)),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.splash-eyebrow,
+.feature-kicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.splash-hero h2 {
+  max-width: 14ch;
+  margin: 14px 0 10px;
+  font-size: clamp(2.5rem, 5vw, 4.8rem);
+  line-height: 0.96;
+  color: var(--ink);
+}
+
+.splash-hero p {
+  max-width: 68ch;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.splash-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.splash-demo-button {
+  min-width: 210px;
+  min-height: 48px;
+  font-size: 0.98rem;
+}
+
+.splash-demo-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(15, 118, 110, 0.16);
+}
+
+.splash-demo-note strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.splash-demo-note span,
+.splash-feature p,
+.splash-capability-grid span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.splash-proof {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.splash-feature {
+  min-height: 100%;
+  padding: 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+}
+
+.feature-primary {
+  grid-column: 1 / -1;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(255, 255, 255, 0.96) 40%, rgba(163, 95, 0, 0.08)),
+    var(--surface);
+}
+
+.splash-feature h3,
+.splash-capabilities h3 {
+  font-size: 1.05rem;
+}
+
+.splash-capabilities {
+  padding: 18px;
+}
+
+.splash-capability-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 6px;
+}
+
+.splash-capability-grid div {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.splash-capability-grid strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.auth-rail {
+  position: sticky;
+  top: 92px;
+}
+
+.auth-rail-panel,
+.auth-secondary-form {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.auth-login-form button {
+  min-height: 44px;
+}
+
+.auth-secondary-form h3 {
+  color: var(--ink);
+}
+
+.auth-utility-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .auth-grid,
@@ -1177,7 +1378,14 @@ tbody tr.atm-row {
   .app-shell,
   .layout-two,
   .entry-grid,
-  .auth-grid {
+  .auth-grid,
+  .auth-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .splash-proof,
+  .auth-utility-grid,
+  .splash-capability-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1185,6 +1393,19 @@ tbody tr.atm-row {
   .demo-banner {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .splash-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-rail {
+    position: static;
+    top: auto;
+  }
+
+  .splash-hero h2 {
+    max-width: 16ch;
   }
 
   .sidebar {
@@ -1223,7 +1444,10 @@ tbody tr.atm-row {
   .entry-guide,
   .strategy-slot-grid,
   .risk-number-guide,
-  .bond-primer {
+  .bond-primer,
+  .splash-proof,
+  .auth-utility-grid,
+  .splash-capability-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1247,6 +1471,28 @@ tbody tr.atm-row {
 
   .line-chart {
     height: 360px;
+  }
+
+  .auth-panel {
+    gap: 18px;
+  }
+
+  .splash-hero,
+  .splash-feature,
+  .splash-capabilities,
+  .auth-rail-panel,
+  .auth-secondary-form {
+    padding: 16px;
+  }
+
+  .splash-hero h2 {
+    max-width: none;
+    font-size: clamp(2rem, 10vw, 3rem);
+  }
+
+  .splash-demo-button,
+  .auth-login-form button {
+    width: 100%;
   }
 }
 

@@ -1,4 +1,4 @@
-const CLIENT_BUILD_ID = "client-public-ready-2026-06-19-2";
+const CLIENT_BUILD_ID = "client-splash-2026-06-19-2";
 const THEME_STORAGE_KEY = "portfolio_theme";
 const SIDEBAR_STORAGE_KEY = "portfolio_sidebar_collapsed";
 const GRAPH_VISIBILITY_STORAGE_KEY = "portfolio_graph_visibility";

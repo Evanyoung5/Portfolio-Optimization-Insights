@@ -12,7 +12,8 @@ pip install -e ".[dev]"
 uvicorn app.main:app --reload
 ```
 
-The frontend is available at `http://localhost:8000/`, and API docs are available at `http://localhost:8000/docs`.
+The development frontend is available at `http://localhost:8000/`, and API docs are available at
+`http://localhost:8000/docs`.
 
 
 ## Frontend
@@ -53,6 +54,9 @@ python3 scripts/prod_smoke_test.py --base-url http://localhost
 docker compose -f docker-compose.prod.yml exec api python -m app.ops.smtp_check
 ```
 
+In that production-style stack, the public entrypoint is `http://localhost/` through Caddy, not
+`http://localhost:8000/`.
+
 For a local production rehearsal with a mail sandbox, use the included local env file shape and Mailpit profile:
 
 ```bash
@@ -61,6 +65,18 @@ docker compose --env-file .env.prod.local -f docker-compose.prod.yml --profile l
 python3 scripts/prod_smoke_test.py --base-url https://localhost --allow-insecure-localhost
 docker compose --env-file .env.prod.local -f docker-compose.prod.yml exec api python -m app.ops.smtp_check --send-test --to you@example.com
 ```
+
+Before deploying on a real VPS, prepare `.env.production` and run:
+
+```bash
+cp .env.production.example .env.production
+./scripts/prod_preflight.sh .env.production
+```
+
+For the full public-launch runbook, see:
+
+- [docs/PUBLIC_DEPLOYMENT.md](docs/PUBLIC_DEPLOYMENT.md)
+- [docs/HOSTINGER_VPS_DEPLOYMENT.md](docs/HOSTINGER_VPS_DEPLOYMENT.md)
 
 Broker integrations are intentionally not implemented yet. The `app/connectors` package contains
 only placeholders so the integration boundary is explicit without connecting to any brokerage.

@@ -6,6 +6,7 @@ __pycache__/
 htmlcov/
 .venv/
 .env
+.env.production
 .env.prod.local
 backups/
 .DS_Store

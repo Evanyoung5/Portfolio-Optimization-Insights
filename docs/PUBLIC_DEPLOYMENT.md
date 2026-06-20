@@ -21,6 +21,12 @@ At minimum:
 
 Public mode now refuses to start if those basics are misconfigured.
 
+Before the first real deploy, run:
+
+```bash
+./scripts/prod_preflight.sh .env.production
+```
+
 ## 2. Deployment topology
 
 Recommended production shape:
@@ -153,3 +159,9 @@ After the latest hardening pass, the repo is in better shape for public hosting:
 - stricter browser security headers are in place
 - the container runs as a non-root user
 - the production compose stack includes container health checks and deployment scripts for SMTP verification, backups, restores, and smoke testing
+
+## 10. Hostinger VPS note
+
+If the site is going to a Hostinger VPS, use [docs/HOSTINGER_VPS_DEPLOYMENT.md](docs/HOSTINGER_VPS_DEPLOYMENT.md)
+as the concrete runbook. It covers DNS, VPS prep, `.env.production`, deploy commands, smoke tests,
+and backup drills.

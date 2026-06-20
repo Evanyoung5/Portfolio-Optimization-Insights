@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portfolio Optimization</title>
-  <script src="/static/theme-init.js?v=client-public-ready-2026-06-19-1"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=client-public-ready-2026-06-19-1">
+  <script src="/static/theme-init.js?v=client-splash-2026-06-19-2"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=client-splash-2026-06-19-2">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -30,42 +30,95 @@
 
   <main id="auth-screen" class="auth-screen">
     <section class="auth-panel">
-      <div class="auth-copy">
-        <h2>Sign in to your private portfolio workspace</h2>
-        <p>Manual lots, cash movements, trades, settings, and portfolio history stay attached to your account.</p>
-      </div>
-      <div class="auth-grid">
-        <form id="login-form" class="panel form-grid">
-          <h3>Login</h3>
-          <label>Email<input name="email" type="email" autocomplete="email" required></label>
-          <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
-          <button class="button primary" type="submit">Log in</button>
-        </form>
-        <form id="register-form" class="panel form-grid">
-          <h3>Create Account</h3>
-          <label>Email<input name="email" type="email" autocomplete="email" required></label>
-          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number." required></label>
-          <button class="button primary" type="submit">Register</button>
-        </form>
-        <form id="password-reset-request-form" class="panel form-grid compact-form">
-          <h3>Password Reset</h3>
-          <label>Email<input name="email" type="email" autocomplete="email" required></label>
-          <button class="button secondary" type="submit">Request reset</button>
-        </form>
-        <form id="password-reset-confirm-form" class="panel form-grid compact-form">
-          <h3>Set New Password</h3>
-          <label>Token<input name="token"></label>
-          <label>New Password<input name="new_password" type="password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number."></label>
-          <button class="button secondary" type="submit">Set password</button>
-        </form>
-        <section class="panel demo-panel">
-          <div class="demo-panel-copy">
-            <span class="pill">Interactive demo</span>
-            <h3>Explore the app before you sign up</h3>
-            <p>Open a diverse sample portfolio, compare it to benchmarks, inspect the options and bond tools, and place temporary demo trades that disappear when the session ends.</p>
+      <div class="auth-shell">
+        <section class="splash-story">
+          <div class="splash-hero">
+            <span class="splash-eyebrow">Portfolio intelligence for real investors</span>
+            <h2>See your portfolio as a living system, not just a list of positions.</h2>
+            <p>Track lots and cost basis, compare performance against major indexes, study covariance and concentration, test optimization targets, explore options and bond structures, and simulate trades before you commit capital.</p>
+            <div class="splash-actions">
+              <button id="demo-start" class="button primary splash-demo-button" type="button">Start interactive demo</button>
+              <div class="splash-demo-note">
+                <strong>Best first step for new visitors</strong>
+                <span>Open a guided sample account, place temporary demo trades, inspect every tab, and leave without creating an account.</span>
+              </div>
+            </div>
           </div>
-          <button id="demo-start" class="button primary" type="button">Explore demo</button>
+
+          <div class="splash-proof">
+            <article class="splash-feature feature-primary">
+              <span class="feature-kicker">Purpose</span>
+              <h3>Built to connect portfolio decisions, risk, and performance</h3>
+              <p>The site is meant for investors who want one workspace for account history, benchmark context, market structure tools, and forward-looking scenario analysis.</p>
+            </article>
+            <article class="splash-feature">
+              <span class="feature-kicker">Track</span>
+              <h3>Private portfolio ledger</h3>
+              <p>Manual lots, cash movements, trade history, cost basis, idle cash, and account growth stay attached to your account.</p>
+            </article>
+            <article class="splash-feature">
+              <span class="feature-kicker">Analyze</span>
+              <h3>Risk, covariance, and heatmaps</h3>
+              <p>Measure volatility, cleaned correlation, trade impact, concentration, and daily movers in one place.</p>
+            </article>
+            <article class="splash-feature">
+              <span class="feature-kicker">Explore</span>
+              <h3>Options, bonds, and strategy lab</h3>
+              <p>Compare Black-Scholes against relativistic pricing, inspect implied volatility structure, and test lightweight strategy scenarios.</p>
+            </article>
+          </div>
+
+          <section class="panel splash-capabilities">
+            <div class="section-head">
+              <h3>What the platform covers</h3>
+              <span class="pill">Live tools</span>
+            </div>
+            <div class="splash-capability-grid">
+              <div><strong>Dashboard</strong><span>Performance, beta, Sharpe, volatility, benchmark comparison, and quote snapshots.</span></div>
+              <div><strong>Entry</strong><span>Manual lots, trades, cash ledger, brokerage CSV import, and flexible cost basis tracking.</span></div>
+              <div><strong>Risk</strong><span>RMT cleaning, covariance, correlation temperature maps, and risk-tolerance reweighting.</span></div>
+              <div><strong>Options Suite</strong><span>Live chains, IV history, gamma, volume, volatility smile, and IV surface views.</span></div>
+              <div><strong>Bond Monitor</strong><span>Public bond assets, ladders, barbells, duration context, and return modeling.</span></div>
+              <div><strong>Strategy Lab</strong><span>Scenario testing, overlays, and sandbox experimentation without touching saved holdings.</span></div>
+            </div>
+          </section>
         </section>
+
+        <aside class="auth-rail">
+          <section class="panel auth-rail-panel">
+            <div class="auth-copy">
+              <span class="pill">Private workspace</span>
+              <h3>Sign in when you want persistence</h3>
+              <p>Your account keeps portfolio data private, encrypted, and available when you return.</p>
+            </div>
+            <form id="login-form" class="form-grid dense-form auth-login-form">
+              <label>Email<input name="email" type="email" autocomplete="email" required></label>
+              <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+              <button class="button primary" type="submit">Log in</button>
+            </form>
+          </section>
+
+          <form id="register-form" class="panel form-grid compact-form auth-secondary-form">
+            <h3>Create Account</h3>
+            <label>Email<input name="email" type="email" autocomplete="email" required></label>
+            <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number." required></label>
+            <button class="button secondary" type="submit">Register</button>
+          </form>
+
+          <div class="auth-utility-grid">
+            <form id="password-reset-request-form" class="panel form-grid compact-form auth-secondary-form">
+              <h3>Password Reset</h3>
+              <label>Email<input name="email" type="email" autocomplete="email" required></label>
+              <button class="button secondary" type="submit">Request reset</button>
+            </form>
+            <form id="password-reset-confirm-form" class="panel form-grid compact-form auth-secondary-form">
+              <h3>Set New Password</h3>
+              <label>Token<input name="token"></label>
+              <label>New Password<input name="new_password" type="password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number."></label>
+              <button class="button secondary" type="submit">Set password</button>
+            </form>
+          </div>
+        </aside>
       </div>
     </section>
   </main>
@@ -681,7 +734,7 @@
   </section>
 
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
-  <script src="/static/demo-data.js?v=client-public-ready-2026-06-19-1" defer></script>
-  <script src="/static/app.js?v=client-public-ready-2026-06-19-1" defer></script>
+  <script src="/static/demo-data.js?v=client-splash-2026-06-19-2" defer></script>
+  <script src="/static/app.js?v=client-splash-2026-06-19-2" defer></script>
 </body>
 </html>
