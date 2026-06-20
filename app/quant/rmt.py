@@ -52,6 +52,22 @@ def sample_covariance(returns):
     return covariance
 
 
+def pairwise_observation_counts(returns):
+    """Count finite return observations available for each asset pair."""
+
+    return_array = _as_return_matrix(returns)
+    n_assets = return_array.shape[1]
+    counts = np.zeros((n_assets, n_assets), dtype=int)
+
+    for i in range(n_assets):
+        for j in range(i, n_assets):
+            count = int((np.isfinite(return_array[:, i]) & np.isfinite(return_array[:, j])).sum())
+            counts[i, j] = count
+            counts[j, i] = count
+
+    return counts
+
+
 def sample_correlation(returns):
     """Compute a sample correlation matrix while ignoring NaNs."""
 

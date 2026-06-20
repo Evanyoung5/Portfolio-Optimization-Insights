@@ -1,0 +1,6 @@
+Positions for account Sample Brokerage (...1234)
+As of 06/19/2026 4:00 PM ET
+Symbol,Description,Quantity,Price,Price Change,Market Value,Day Change,Cost Basis,Cost/Share,Security Type
+SCHB,Schwab U.S. Broad Market ETF,12,$24.50,$0.12,$294.00,$1.44,$240.00,$20.00,ETF
+SCHZ,Schwab U.S. Aggregate Bond ETF,8,$23.00,($0.05),$184.00,($0.40),$200.00,$25.00,ETF
+Account Total,,,,,$478.00,,,,

@@ -14,7 +14,13 @@ from app.db.models import BackgroundJob
 from app.db.repository import create_portfolio_repository
 
 LOGGER = logging.getLogger(__name__)
-SUPPORTED_JOB_TYPES = {"manual_lot_rollup", "rebuild_positions", "refresh_market_data", "refresh_market_history"}
+SUPPORTED_JOB_TYPES = {
+    "manual_lot_rollup",
+    "rebuild_positions",
+    "refresh_market_data",
+    "refresh_bond_market_data",
+    "refresh_market_history",
+}
 
 
 def process_background_job(repository: Any, queued_job: QueuedBackgroundJob) -> BackgroundJob:
@@ -109,7 +115,7 @@ def process_background_job(repository: Any, queued_job: QueuedBackgroundJob) -> 
                 message=f"Cached {', '.join(completed)} market history for {priced} ticker(s).",
             )
 
-        if queued_job.job_type == "refresh_market_data":
+        if queued_job.job_type in {"refresh_market_data", "refresh_bond_market_data"}:
             portfolio = repository.get(queued_job.portfolio_id)
             if portfolio is None:
                 raise KeyError(f"Portfolio {queued_job.portfolio_id!r} was not found.")
@@ -163,7 +169,11 @@ def process_background_job(repository: Any, queued_job: QueuedBackgroundJob) -> 
                 queued_job.portfolio_id,
                 queued_job.job_id,
                 status="completed",
-                message=f"Refreshed market data for {len(quotes)} ticker(s); repriced {repriced} holding(s).",
+                message=(
+                    f"Refreshed cached bond prices for {len(quotes)} ticker(s); repriced {repriced} holding(s)."
+                    if queued_job.job_type == "refresh_bond_market_data"
+                    else f"Refreshed market data for {len(quotes)} ticker(s); repriced {repriced} holding(s)."
+                ),
             )
 
         portfolio = rebuild_portfolio_positions(repository, queued_job.portfolio_id)

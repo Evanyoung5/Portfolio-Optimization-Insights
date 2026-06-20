@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -8,16 +9,23 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-APP_BUILD_ID = "runtime-history-options-ui-2026-06-01"
+APP_BUILD_ID = "runtime-risk-bonds-2026-06-19"
 
 from app.api.routes import portfolio_repository, public_router, router as api_router
 from app.background.queue import redis_client_from_env
+from app.security import (
+    default_security_headers,
+    frontend_origins,
+    redact_runtime_payload,
+    trusted_hosts,
+    validate_runtime_configuration,
+)
 
 
 def _frontend_origins() -> list[str]:
-    configured = os.getenv("FRONTEND_ORIGINS")
+    configured = frontend_origins()
     if configured:
-        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+        return configured
     return [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -27,11 +35,16 @@ def _frontend_origins() -> list[str]:
 
 
 def _trusted_hosts() -> list[str] | None:
-    configured = os.getenv("APP_HOSTS")
-    if not configured:
+    hosts = trusted_hosts()
+    if not hosts:
         return None
-    hosts = [host.strip() for host in configured.split(",") if host.strip()]
     return hosts or None
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    validate_runtime_configuration()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -39,6 +52,7 @@ def create_app() -> FastAPI:
         title="Portfolio Optimization API",
         version="0.1.0",
         description="Backend API for portfolio analysis, optimization, and trade-impact simulation.",
+        lifespan=_lifespan,
     )
 
     trusted_hosts = _trusted_hosts()
@@ -56,24 +70,17 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
         response = await call_next(request)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-        if os.getenv("ENABLE_HSTS", "false").strip().lower() == "true":
-            response.headers.setdefault(
-                "Strict-Transport-Security",
-                "max-age=31536000; includeSubDomains; preload",
-            )
+        for header, value in default_security_headers().items():
+            response.headers.setdefault(header, value)
         return response
 
     @app.get("/runtime", tags=["health"])
     def runtime_check() -> dict[str, object]:
-        return _runtime_payload()
+        return redact_runtime_payload(_runtime_payload())
 
     @app.get("/api/v1/runtime", tags=["health"])
     def api_runtime_check() -> dict[str, object]:
-        return _runtime_payload()
+        return redact_runtime_payload(_runtime_payload())
 
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
     if frontend_dir.exists():

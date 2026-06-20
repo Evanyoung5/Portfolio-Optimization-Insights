@@ -1,7 +1,8 @@
-const CLIENT_BUILD_ID = "client-history-options-ui-2026-06-01";
+const CLIENT_BUILD_ID = "client-public-ready-2026-06-19-2";
 const THEME_STORAGE_KEY = "portfolio_theme";
 const SIDEBAR_STORAGE_KEY = "portfolio_sidebar_collapsed";
 const GRAPH_VISIBILITY_STORAGE_KEY = "portfolio_graph_visibility";
+const DEMO_SESSION_STORAGE_KEY = "portfolio_demo_session";
 
 const ASSET_MODEL = {
   cash: { return: 0.02, vol: 0.01, beta: 0 },
@@ -11,6 +12,19 @@ const ASSET_MODEL = {
   etf: { return: 0.075, vol: 0.14, beta: 0.92 },
   commodity: { return: 0.055, vol: 0.22, beta: 0.55 },
   crypto: { return: 0.12, vol: 0.65, beta: 1.45 },
+};
+
+const RISK_SCORE_TARGETS = {
+  1: ["Capital preservation", 0.04, 0.10, 0.70, 0.20],
+  2: ["Very conservative", 0.06, 0.20, 0.65, 0.15],
+  3: ["Conservative", 0.08, 0.30, 0.60, 0.10],
+  4: ["Conservative growth", 0.10, 0.40, 0.50, 0.10],
+  5: ["Balanced", 0.12, 0.50, 0.45, 0.05],
+  6: ["Balanced growth", 0.14, 0.60, 0.35, 0.05],
+  7: ["Growth", 0.17, 0.70, 0.25, 0.05],
+  8: ["High growth", 0.20, 0.80, 0.15, 0.05],
+  9: ["Aggressive", 0.24, 0.90, 0.07, 0.03],
+  10: ["Very aggressive", 0.30, 0.95, 0.03, 0.02],
 };
 
 const SERIES_COLORS = ["#0f766e", "#a35f00", "#8b1e3f", "#2f6f9f", "#5f5d1f", "#6d3b8f"];
@@ -70,6 +84,12 @@ const appState = {
   riskSimulation: null,
   relativisticBs: null,
   relativisticBsHistory: null,
+  strategyLab: null,
+  riskTolerance: null,
+  riskReweight: null,
+  bondAssets: null,
+  bondStrategy: null,
+  bondRungs: [],
   performanceRange: localStorage.getItem("performance_range") || "max",
   performanceResolution: localStorage.getItem("performance_resolution") || "auto",
   selectedBenchmarks: JSON.parse(localStorage.getItem("performance_benchmarks") || "[\"SPY\",\"QQQ\"]"),
@@ -80,7 +100,92 @@ const appState = {
   theme: document.documentElement.dataset.theme || localStorage.getItem(THEME_STORAGE_KEY) || "light",
   sidebarCollapsed: localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true",
   graphVisibility: JSON.parse(localStorage.getItem(GRAPH_VISIBILITY_STORAGE_KEY) || "{}"),
+  demoMode: false,
+  demoTourActive: false,
+  demoTourStep: 0,
+  demoOptionsInput: null,
 };
+
+const DEMO_TOUR_STEPS = [
+  {
+    tab: "dashboard",
+    selector: "#demo-banner",
+    title: "Demo Sandbox",
+    body: "This is a temporary browser-only workspace. You can inspect the sample portfolio, record demo trades, and leave without saving anything.",
+  },
+  {
+    tab: "dashboard",
+    selector: ".performance-panel",
+    title: "Performance And Benchmarks",
+    body: "The main chart compares the portfolio against major indexes. Change the range, zoom directly on the chart, and toggle benchmarks to see how the sample account behaved over time.",
+  },
+  {
+    tab: "dashboard",
+    selector: "#holdings-table",
+    title: "Holdings And Cost Basis",
+    body: "This table ties together quantity, current price, cost basis, and return. In the demo, try selling or adding to one of these existing symbols to watch the dashboard update.",
+  },
+  {
+    tab: "entry",
+    selector: ".entry-guide",
+    title: "Manual Entry",
+    body: "This is where the live product records lots, trades, and cash movements. In the demo, manual trades update the sample account immediately, but the changes disappear once the session ends.",
+  },
+  {
+    tab: "risk",
+    selector: ".risk-tolerance-panel",
+    title: "Risk Profile",
+    body: "The risk tab summarizes correlation, covariance, and a saved risk score. Use it to see how the current mix lines up with a conservative or growth-oriented allocation target.",
+  },
+  {
+    tab: "bonds",
+    selector: "#bond-assets-table",
+    title: "Bond Monitor",
+    body: "The bond monitor collects public fixed-income ETFs and structures them into ladders or barbells. The demo shows the layout and sample calculations without hitting the live market-data pipeline.",
+  },
+  {
+    tab: "relativistic-bs",
+    selector: "#relativistic-bs-chart",
+    title: "Options Suite",
+    body: "The options suite compares market pricing, Black-Scholes, and the relativistic adjustment across the chain, then follows implied volatility, gamma, and volume through time.",
+  },
+  {
+    tab: "strategy-lab",
+    selector: ".strategy-lab-chart-panel",
+    title: "Strategy Lab",
+    body: "This isolated lab runs lightweight scenarios from cached history without altering the account. It is a good place to test rebalancing ideas before building anything heavier.",
+  },
+  {
+    tab: "heatmap",
+    selector: "#heatmap-grid",
+    title: "Portfolio Heatmap",
+    body: "The heatmap sizes each tile by portfolio weight and colors it by the latest daily move. It is meant to give you the fastest glance at concentration and today's winners or laggards.",
+  },
+  {
+    tab: "optimize",
+    selector: "#optimization-results",
+    title: "Optimization",
+    body: "Optimization compares the current mix with model targets so visitors can see how different objectives change the recommended weights without risking a real account.",
+  },
+  {
+    tab: "simulate",
+    selector: "#simple-impact-results",
+    title: "Trade Simulation",
+    body: "Simulation estimates how a proposed trade would change weights, concentration, and portfolio risk before anything is committed. In demo mode it is fully local and disposable.",
+  },
+  {
+    tab: "market",
+    selector: "#quotes-table",
+    title: "Market Data",
+    body: "The live app uses cached quotes, background jobs, and rate limits. The demo shows the output shape while keeping market requests turned off.",
+  },
+  {
+    tab: "account",
+    selector: "#account-profile",
+    title: "Account Controls",
+    body: "Real accounts add persistence, privacy, and email-based recovery. From the top bar you can replay this walkthrough or exit the demo and return to the login screen.",
+  },
+];
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -89,6 +194,7 @@ window.addEventListener("DOMContentLoaded", () => {
   applyTheme(appState.theme, { persist: false, redraw: false });
   applySidebarState({ persist: false });
   applyGraphVisibility();
+  normalizeNumericInputs();
   bindEvents();
   setDefaultRelativisticBSExpiry();
   boot();
@@ -96,10 +202,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
 async function boot() {
   await checkHealth();
-  if (appState.token) {
-    await loadWorkspace();
+  if (loadStoredDemoSession()) {
+    enterDemoMode({ restartTour: false });
   } else {
-    renderAuthState();
+    await loadWorkspace({ quietUnauthorized: true });
   }
 }
 
@@ -131,6 +237,7 @@ function redrawThemeSensitiveViews() {
   if (appState.portfolio) {
     renderDashboard();
     renderRelativisticBS();
+    renderStrategyLab();
     renderHeatmap();
   }
 }
@@ -170,15 +277,30 @@ function applyGraphVisibility() {
 }
 
 function bindEvents() {
+  ["#bond-strategy-form", "#relativistic-bs-form"].forEach((selector) => {
+    const form = $(selector);
+    if (form) form.noValidate = true;
+  });
   $("#login-form").addEventListener("submit", handleLogin);
   $("#register-form").addEventListener("submit", handleRegister);
   $("#password-reset-request-form").addEventListener("submit", handlePasswordResetRequest);
   $("#password-reset-confirm-form").addEventListener("submit", handlePasswordResetConfirm);
+  $("#demo-start").addEventListener("click", () => enterDemoMode({ restartTour: true }));
   $("#verification-confirm-form").addEventListener("submit", handleVerificationConfirm);
   $("#request-verification").addEventListener("click", handleVerificationRequest);
   $("#theme-toggle").addEventListener("click", handleThemeToggle);
   $("#sidebar-toggle").addEventListener("click", handleSidebarToggle);
+  $("#demo-tour-button").addEventListener("click", startDemoTour);
+  $("#demo-exit-button").addEventListener("click", exitDemoMode);
+  $("#demo-banner-tour").addEventListener("click", startDemoTour);
+  $("#demo-banner-exit").addEventListener("click", exitDemoMode);
+  $("#demo-tour-next").addEventListener("click", advanceDemoTour);
+  $("#demo-tour-back").addEventListener("click", rewindDemoTour);
+  $("#demo-tour-exit").addEventListener("click", exitDemoMode);
   document.addEventListener("change", handleGraphVisibilityChange);
+  document.addEventListener("input", handleNumericInputNormalization, true);
+  document.addEventListener("change", handleNumericInputNormalization, true);
+  document.addEventListener("keydown", handleDemoTourKeydown);
   $("#logout-button").addEventListener("click", logout);
   $("#refresh-workspace").addEventListener("click", () => loadWorkspace());
   $("#create-portfolio-form").addEventListener("submit", handleCreatePortfolio);
@@ -188,11 +310,30 @@ function bindEvents() {
   $("#settings-form").addEventListener("submit", handleSaveSettings);
   $("#csv-form").addEventListener("submit", handleCsvUpload);
   $("#risk-form").addEventListener("submit", handleRiskAnalysis);
+  $("#risk-tolerance-form").addEventListener("submit", handleRiskTolerance);
+  $("#risk-tolerance-score").addEventListener("input", renderRiskTolerance);
+  $("#bond-refresh").addEventListener("click", handleBondRefresh);
+  $("#bond-category-filter").addEventListener("change", renderBonds);
+  $("#bond-watchlist-only").addEventListener("change", renderBonds);
+  $("#bond-assets-table").addEventListener("change", handleBondWatchlistChange);
+  $("#bond-save-watchlist").addEventListener("click", handleBondSaveWatchlist);
+  $("#bond-load-recommendation").addEventListener("click", loadRecommendedBondStructure);
+  $("#bond-strategy-type").addEventListener("change", loadRecommendedBondStructure);
+  $("#bond-add-rung").addEventListener("click", handleAddBondRung);
+  $("#bond-rung-rows").addEventListener("click", handleRemoveBondRung);
+  $("#bond-strategy-form").addEventListener("submit", handleBondStrategy);
   $("#relativistic-bs-form").addEventListener("submit", handleRelativisticBSRefresh);
   $("#relativistic-bs-force-refresh").addEventListener("click", handleRelativisticBSForceRefresh);
   $("#relativistic-bs-history-resolution").addEventListener("change", loadRelativisticBSHistory);
   $("#relativistic-bs-history-lookback").addEventListener("change", loadRelativisticBSHistory);
+  $("#relativistic-bs-surface-expiry-min").addEventListener("change", handleRelbsSurfaceFilterChange);
+  $("#relativistic-bs-surface-expiry-max").addEventListener("change", handleRelbsSurfaceFilterChange);
+  $("#relativistic-bs-surface-moneyness-min").addEventListener("change", handleRelbsSurfaceFilterChange);
+  $("#relativistic-bs-surface-moneyness-max").addEventListener("change", handleRelbsSurfaceFilterChange);
+  $("#relativistic-bs-surface-reset").addEventListener("click", resetRelbsSurfaceFilters);
   $("#relativistic-bs-vol-guide").addEventListener("click", handleUseVolatilityEstimate);
+  $("#strategy-lab-form").addEventListener("submit", handleStrategyLab);
+  $("#strategy-lab-universe").addEventListener("change", handleStrategyLabUniverseChange);
   $("#heatmap-form").addEventListener("submit", handleHeatmap);
   $("#optimization-form").addEventListener("submit", handleOptimization);
   $("#optimization-form").addEventListener("change", () => {
@@ -207,6 +348,7 @@ function bindEvents() {
   $("#performance-resolution").addEventListener("change", handlePerformanceResolution);
   $("#performance-reset-zoom").addEventListener("click", resetPerformanceZoom);
   $("#benchmark-selector").addEventListener("change", handleBenchmarkSelection);
+  $("#risk-correlation-threshold").addEventListener("input", renderRisk);
   $("#holdings-table").addEventListener("click", handleDeleteClick);
   $("#lots-table").addEventListener("click", handleDeleteClick);
 
@@ -222,7 +364,49 @@ function bindEvents() {
   });
   window.addEventListener("resize", () => {
     if (appState.portfolio && $("#dashboard")?.classList.contains("active")) renderDashboard();
+    if (appState.portfolio && $("#strategy-lab")?.classList.contains("active")) renderStrategyLab();
+    if (appState.demoTourActive) positionDemoTour();
   });
+}
+
+function handleNumericInputNormalization(event) {
+  const input = event.target instanceof HTMLInputElement ? event.target.closest('input[type="number"]') : null;
+  if (!input) return;
+  normalizeNumericInput(input, { coerceStep: event.type === "change" });
+}
+
+function normalizeNumericInputs(root = document) {
+  $$('input[type="number"]', root).forEach((input) => normalizeNumericInput(input));
+}
+
+function normalizeNumericInput(input, options = {}) {
+  const raw = String(input.value || "").trim();
+  if (!raw) return;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    input.value = "";
+    return;
+  }
+  let normalized = parsed;
+  const step = String(input.step || "").toLowerCase();
+  const min = Number(input.min);
+  if (options.coerceStep && step && step !== "any") {
+    const stepValue = Number(step);
+    if (Number.isFinite(stepValue) && stepValue > 0) {
+      const base = Number.isFinite(min) ? min : 0;
+      const units = Math.round((normalized - base) / stepValue);
+      normalized = base + (units * stepValue);
+    }
+  }
+  input.value = normalizedNumberString(normalized, step);
+}
+
+function normalizedNumberString(value, step = "") {
+  if (!Number.isFinite(value)) return "";
+  const normalizedStep = String(step || "").toLowerCase();
+  if (!normalizedStep || normalizedStep === "any") return String(value);
+  const decimal = normalizedStep.includes(".") ? normalizedStep.split(".")[1].length : 0;
+  return decimal ? value.toFixed(decimal) : String(Math.round(value));
 }
 
 async function checkHealth() {
@@ -236,9 +420,239 @@ async function checkHealth() {
   await refreshRuntime({ retries: 3 });
 }
 
+function loadStoredDemoSession() {
+  try {
+    const raw = localStorage.getItem(DEMO_SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    localStorage.removeItem(DEMO_SESSION_STORAGE_KEY);
+    return null;
+  }
+}
+
+function persistDemoSession() {
+  if (!appState.demoMode || !appState.portfolio) return;
+  const snapshot = {
+    portfolio: appState.portfolio,
+    selectedBenchmarks: appState.selectedBenchmarks,
+    optionsInput: appState.demoOptionsInput || currentDemoOptionsInput(),
+    performanceRange: appState.performanceRange,
+    performanceResolution: appState.performanceResolution,
+  };
+  localStorage.setItem(DEMO_SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+}
+
+function clearDemoSession() {
+  localStorage.removeItem(DEMO_SESSION_STORAGE_KEY);
+}
+
+function currentDemoOptionsInput() {
+  const symbol = $("#relativistic-bs-symbol")?.value?.trim().toUpperCase() || appState.relativisticBs?.symbol || appState.portfolio?.positions?.[0]?.ticker || "MSFT";
+  const expiryDate = $("#relativistic-bs-expiry-date")?.value || appState.relativisticBs?.actual_expiry_date || "2026-12-18";
+  return {
+    symbol,
+    expiry_date: expiryDate,
+    rate: relativisticBSNumber("#relativistic-bs-rate", appState.portfolio?.settings?.risk_free_rate ?? 0.02),
+    sigma: relativisticBSNumber("#relativistic-bs-sigma", appState.relativisticBs?.parameters?.sigma ?? 0.24),
+    c_m: relativisticBSNumber("#relativistic-bs-cm", appState.relativisticBs?.parameters?.c_m ?? 2.65),
+    option_type: $("#relativistic-bs-option-type")?.value || "call",
+    strike_min_pct: relativisticBSNumber("#relativistic-bs-strike-min-pct", 0.85),
+    strike_max_pct: relativisticBSNumber("#relativistic-bs-strike-max-pct", 1.18),
+    strike_detail: $("#relativistic-bs-strike-detail")?.value || "auto",
+  };
+}
+
+function applyDemoWorkspace(workspace, options = {}) {
+  appState.demoMode = true;
+  appState.demoTourActive = options.keepTour ? appState.demoTourActive : false;
+  appState.user = workspace.user;
+  appState.portfolios = workspace.portfolios || [];
+  appState.selectedPortfolioId = workspace.selectedPortfolioId;
+  appState.portfolio = workspace.portfolio;
+  appState.marketData = workspace.marketData || { quotes: [], missing_tickers: [] };
+  appState.performanceHistory = workspace.performanceHistory || {};
+  appState.performanceHistoryPending = {};
+  appState.performanceZoom = null;
+  appState.selectedBenchmarks = workspace.selectedBenchmarks || appState.selectedBenchmarks;
+  appState.riskAnalysis = workspace.riskAnalysis || null;
+  appState.heatmap = workspace.heatmap || null;
+  appState.optimization = workspace.optimization || null;
+  appState.simpleImpact = workspace.simpleImpact || null;
+  appState.riskSimulation = workspace.riskSimulation || null;
+  appState.relativisticBs = workspace.relativisticBs || null;
+  appState.relativisticBsHistory = workspace.relativisticBsHistory || null;
+  appState.strategyLab = null;
+  appState.riskTolerance = workspace.riskTolerance || null;
+  appState.riskReweight = workspace.riskReweight || null;
+  appState.bondAssets = workspace.bondAssets || null;
+  appState.bondStrategy = workspace.bondStrategy || null;
+  appState.bondRungs = [];
+  appState.demoOptionsInput = workspace.optionsInput || currentDemoOptionsInput();
+  appState.performanceRange = workspace.performanceRange || appState.performanceRange;
+  appState.performanceResolution = workspace.performanceResolution || appState.performanceResolution;
+  renderAuthState();
+  renderAll();
+  syncDemoOptionsForm();
+  persistDemoSession();
+}
+
+function syncDemoOptionsForm() {
+  if (!appState.demoOptionsInput) return;
+  const fields = appState.demoOptionsInput;
+  if ($("#relativistic-bs-symbol")) $("#relativistic-bs-symbol").value = fields.symbol || "MSFT";
+  if ($("#relativistic-bs-expiry-date")) $("#relativistic-bs-expiry-date").value = fields.expiry_date || $("#relativistic-bs-expiry-date").value;
+  if ($("#relativistic-bs-rate")) $("#relativistic-bs-rate").value = fields.rate ?? $("#relativistic-bs-rate").value;
+  if ($("#relativistic-bs-sigma")) $("#relativistic-bs-sigma").value = fields.sigma ?? $("#relativistic-bs-sigma").value;
+  if ($("#relativistic-bs-cm")) $("#relativistic-bs-cm").value = fields.c_m ?? $("#relativistic-bs-cm").value;
+  if ($("#relativistic-bs-option-type")) $("#relativistic-bs-option-type").value = fields.option_type || "call";
+  if ($("#relativistic-bs-strike-min-pct")) $("#relativistic-bs-strike-min-pct").value = fields.strike_min_pct ?? 0.85;
+  if ($("#relativistic-bs-strike-max-pct")) $("#relativistic-bs-strike-max-pct").value = fields.strike_max_pct ?? 1.18;
+  if ($("#relativistic-bs-strike-detail")) $("#relativistic-bs-strike-detail").value = fields.strike_detail || "auto";
+}
+
+function enterDemoMode({ restartTour = true } = {}) {
+  const snapshot = loadStoredDemoSession();
+  const workspace = window.PORTFOLIO_DEMO.buildWorkspace(snapshot || undefined);
+  if (snapshot?.performanceRange) appState.performanceRange = snapshot.performanceRange;
+  if (snapshot?.performanceResolution) appState.performanceResolution = snapshot.performanceResolution;
+  applyDemoWorkspace(workspace);
+  activateTab("dashboard");
+  if (restartTour) {
+    window.setTimeout(() => startDemoTour(), 100);
+  } else {
+    stopDemoTour();
+  }
+  toast("Demo workspace loaded.");
+}
+
+function exitDemoMode() {
+  stopDemoTour();
+  clearDemoSession();
+  appState.demoMode = false;
+  appState.demoOptionsInput = null;
+  clearAuth();
+  renderAuthState();
+  renderAll();
+  toast("Returned to the sign-in screen.");
+}
+
+function refreshDemoWorkspace(portfolioOverride, options = {}) {
+  if (!appState.demoMode) return;
+  const snapshot = {
+    portfolio: portfolioOverride || appState.portfolio,
+    selectedBenchmarks: appState.selectedBenchmarks,
+    optionsInput: options.optionsInput || appState.demoOptionsInput || currentDemoOptionsInput(),
+    performanceRange: appState.performanceRange,
+    performanceResolution: appState.performanceResolution,
+  };
+  const workspace = window.PORTFOLIO_DEMO.buildWorkspace(snapshot);
+  applyDemoWorkspace(workspace, { keepTour: true });
+  if (options.tabId) activateTab(options.tabId);
+}
+
+function startDemoTour() {
+  if (!appState.demoMode) return;
+  appState.demoTourActive = true;
+  appState.demoTourStep = 0;
+  showDemoTourStep();
+}
+
+function stopDemoTour() {
+  appState.demoTourActive = false;
+  const overlay = $("#demo-tour-overlay");
+  const popover = $("#demo-tour-popover");
+  if (overlay) overlay.hidden = true;
+  if (popover) popover.hidden = true;
+  $(".demo-tour-target")?.classList.remove("demo-tour-target");
+  $$(".demo-tour-target").forEach((node) => node.classList.remove("demo-tour-target"));
+}
+
+function advanceDemoTour() {
+  if (!appState.demoTourActive) return;
+  if (appState.demoTourStep >= DEMO_TOUR_STEPS.length - 1) {
+    stopDemoTour();
+    toast("The walkthrough can be replayed from the top bar any time.");
+    return;
+  }
+  appState.demoTourStep += 1;
+  showDemoTourStep();
+}
+
+function rewindDemoTour() {
+  if (!appState.demoTourActive) return;
+  appState.demoTourStep = Math.max(0, appState.demoTourStep - 1);
+  showDemoTourStep();
+}
+
+function handleDemoTourKeydown(event) {
+  if (!appState.demoTourActive) return;
+  if (event.key === "Escape") stopDemoTour();
+  if (event.key === "ArrowRight" || event.key === "Enter") advanceDemoTour();
+  if (event.key === "ArrowLeft") rewindDemoTour();
+}
+
+function showDemoTourStep() {
+  const step = DEMO_TOUR_STEPS[appState.demoTourStep];
+  if (!step) return;
+  if (step.tab) {
+    if (step.selector && step.selector.includes("sidebar")) {
+      appState.sidebarCollapsed = false;
+      applySidebarState({ persist: true });
+    }
+    activateTab(step.tab);
+  }
+  const target = $(step.selector);
+  const overlay = $("#demo-tour-overlay");
+  const popover = $("#demo-tour-popover");
+  if (!target || !overlay || !popover) return;
+  $$(".demo-tour-target").forEach((node) => node.classList.remove("demo-tour-target"));
+  target.classList.add("demo-tour-target");
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+  $("#demo-tour-title").textContent = step.title;
+  $("#demo-tour-body").textContent = step.body;
+  $("#demo-tour-step").textContent = `${appState.demoTourStep + 1} / ${DEMO_TOUR_STEPS.length}`;
+  $("#demo-tour-back").disabled = appState.demoTourStep === 0;
+  $("#demo-tour-next").textContent = appState.demoTourStep === DEMO_TOUR_STEPS.length - 1 ? "Finish" : "Next";
+  overlay.hidden = false;
+  popover.hidden = false;
+  window.setTimeout(() => positionDemoTour(), 60);
+}
+
+function positionDemoTour() {
+  if (!appState.demoTourActive) return;
+  const step = DEMO_TOUR_STEPS[appState.demoTourStep];
+  const target = step ? $(step.selector) : null;
+  const popover = $("#demo-tour-popover");
+  if (!target || !popover) return;
+  const margin = 16;
+  const rect = target.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  popover.style.maxHeight = `${Math.max(280, viewportHeight - (margin * 2))}px`;
+  const popoverRect = popover.getBoundingClientRect();
+  const hasRoomBelow = rect.bottom + 18 + popoverRect.height <= viewportHeight - margin;
+  const hasRoomAbove = rect.top - 18 - popoverRect.height >= margin;
+  let top;
+  if (hasRoomBelow) {
+    top = rect.bottom + 18;
+  } else if (hasRoomAbove) {
+    top = rect.top - popoverRect.height - 18;
+  } else {
+    top = Math.round((viewportHeight - popoverRect.height) / 2);
+  }
+  top = Math.min(Math.max(top, margin), viewportHeight - popoverRect.height - margin);
+  const desiredLeft = rect.left + (rect.width / 2) - (popoverRect.width / 2);
+  const left = Math.min(Math.max(desiredLeft, margin), viewportWidth - popoverRect.width - margin);
+  popover.style.top = `${Math.round(top)}px`;
+  popover.style.left = `${Math.round(left)}px`;
+}
+
 async function api(path, options = {}) {
   const request = { method: options.method || "GET", headers: {}, credentials: "same-origin" };
   const useAuth = options.auth !== false;
+  if (appState.demoMode && useAuth) {
+    throw new Error("This action needs a signed-in account. The demo keeps changes only in this browser session.");
+  }
   if (useAuth && appState.token) {
     request.headers.Authorization = `Bearer ${appState.token}`;
   }
@@ -250,7 +664,20 @@ async function api(path, options = {}) {
     request.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(path, request);
+  let response = await fetch(path, request);
+  if (
+    response.status === 401
+    && useAuth
+    && options.retryOnAuthFailure !== false
+    && !path.startsWith("/auth/")
+  ) {
+    const refreshed = await refreshSession().catch(() => false);
+    if (refreshed) {
+      if (appState.token) request.headers.Authorization = `Bearer ${appState.token}`;
+      else delete request.headers.Authorization;
+      response = await fetch(path, request);
+    }
+  }
   const text = await response.text();
   let payload = null;
   if (text) {
@@ -270,6 +697,23 @@ async function api(path, options = {}) {
     throw new Error(Array.isArray(detail) ? detail.map((item) => item.msg || item).join("; ") : detail);
   }
   return payload;
+}
+
+async function refreshSession() {
+  if (appState.demoMode) return false;
+  const request = { method: "POST", headers: {}, credentials: "same-origin" };
+  if (appState.refreshToken) {
+    request.headers["Content-Type"] = "application/json";
+    request.body = JSON.stringify({ refresh_token: appState.refreshToken });
+  }
+  const response = await fetch("/auth/refresh", request);
+  if (!response.ok) {
+    throw new Error("Session refresh failed.");
+  }
+  const auth = await response.json();
+  setAuth(auth);
+  clearLegacyAuthStorage();
+  return true;
 }
 
 async function handleLogin(event) {
@@ -352,14 +796,20 @@ async function handleVerificationConfirm(event) {
 }
 
 function setAuth(auth) {
+  clearDemoSession();
+  stopDemoTour();
+  appState.demoMode = false;
   appState.token = auth.access_token;
   appState.refreshToken = auth.refresh_token;
   appState.user = auth.user;
-  localStorage.setItem("access_token", appState.token);
-  localStorage.setItem("refresh_token", appState.refreshToken);
+  clearLegacyAuthStorage();
 }
 
 function clearAuth() {
+  appState.demoMode = false;
+  appState.demoTourActive = false;
+  appState.demoTourStep = 0;
+  appState.demoOptionsInput = null;
   appState.token = "";
   appState.refreshToken = "";
   appState.user = null;
@@ -368,16 +818,27 @@ function clearAuth() {
   appState.performanceHistory = {};
   appState.performanceHistoryPending = {};
   appState.performanceZoom = null;
+  appState.riskTolerance = null;
+  appState.riskReweight = null;
+  appState.bondAssets = null;
+  appState.bondStrategy = null;
+  appState.bondRungs = [];
+  clearLegacyAuthStorage();
+  localStorage.removeItem("selected_portfolio_id");
+}
+
+function clearLegacyAuthStorage() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
-  localStorage.removeItem("selected_portfolio_id");
 }
 
 async function logout() {
   try {
-    if (appState.refreshToken) {
-      await api("/auth/logout", { method: "POST", body: { refresh_token: appState.refreshToken } });
-    }
+    await api("/auth/logout", {
+      method: "POST",
+      body: appState.refreshToken ? { refresh_token: appState.refreshToken } : undefined,
+      retryOnAuthFailure: false,
+    });
   } catch (error) {
     // Logout is local even if the token was already revoked.
   }
@@ -386,7 +847,11 @@ async function logout() {
   toast("Logged out.");
 }
 
-async function loadWorkspace() {
+async function loadWorkspace(options = {}) {
+  if (appState.demoMode) {
+    refreshDemoWorkspace(appState.portfolio);
+    return;
+  }
   try {
     appState.user = await api("/me");
     const portfolioPayload = await api("/me/portfolios");
@@ -406,20 +871,26 @@ async function loadWorkspace() {
       renderAll();
     }
   } catch (error) {
-    toast(error.message, true);
+    if (!options.quietUnauthorized || !/login is required|invalid or expired token|access token has expired/i.test(String(error.message).toLowerCase())) {
+      toast(error.message, true);
+    }
+    clearAuth();
     renderAuthState();
   }
 }
 
 async function selectPortfolio(portfolioId) {
+  if (appState.demoMode) return;
   appState.selectedPortfolioId = portfolioId;
   localStorage.setItem("selected_portfolio_id", portfolioId);
   await loadPortfolio(portfolioId);
 }
 
 async function loadPortfolio(portfolioId) {
+  if (appState.demoMode) return;
   appState.portfolio = await api(`/portfolios/${portfolioId}`);
   appState.marketData = await api(`/portfolios/${portfolioId}/market-data`).catch(() => ({ quotes: [], missing_tickers: [] }));
+  appState.riskTolerance = await api(`/portfolios/${portfolioId}/risk-tolerance`).catch(() => null);
   appState.heatmap = null;
   appState.performanceHistory = {};
   appState.performanceHistoryPending = {};
@@ -429,6 +900,11 @@ async function loadPortfolio(portfolioId) {
   appState.riskSimulation = null;
   appState.relativisticBs = null;
   appState.relativisticBsHistory = null;
+  appState.strategyLab = null;
+  appState.riskReweight = null;
+  appState.bondAssets = null;
+  appState.bondStrategy = null;
+  appState.bondRungs = [];
   renderAll();
   maybeQueueMissingMarketData();
 }
@@ -441,12 +917,25 @@ async function handleDeleteClick(event) {
   const id = button.dataset.deleteId;
   const label = button.dataset.deleteLabel || id;
   if (!window.confirm(`Delete ${label}?`)) return;
+  if (appState.demoMode) {
+    try {
+      const nextPortfolio = kind === "lot"
+        ? window.PORTFOLIO_DEMO.deleteLot(appState.portfolio, id)
+        : window.PORTFOLIO_DEMO.deletePosition(appState.portfolio, id);
+      refreshDemoWorkspace(nextPortfolio, { tabId: kind === "lot" ? "entry" : "dashboard" });
+      toast(`${label} removed from the demo session.`);
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const path = kind === "lot"
       ? `/portfolios/${appState.selectedPortfolioId}/lots/${encodeURIComponent(id)}`
       : `/portfolios/${appState.selectedPortfolioId}/positions/${encodeURIComponent(id)}`;
     appState.portfolio = await api(path, { method: "DELETE" });
     appState.heatmap = null;
+    invalidatePerformanceHistory();
     await refreshSelected(false);
     toast(`${label} removed.`);
   } catch (error) {
@@ -473,6 +962,10 @@ function handleBenchmarkSelection() {
   appState.selectedBenchmarks = $$("#benchmark-selector input:checked").map((item) => item.value);
   appState.performanceZoom = null;
   localStorage.setItem("performance_benchmarks", JSON.stringify(appState.selectedBenchmarks));
+  if (appState.demoMode) {
+    refreshDemoWorkspace(appState.portfolio, { tabId: "dashboard" });
+    return;
+  }
   renderDashboard();
 }
 
@@ -484,6 +977,10 @@ function resetPerformanceZoom() {
 async function handleCreatePortfolio(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  if (appState.demoMode) {
+    toast("The demo uses a single temporary portfolio. Sign in to create persistent portfolios.", true);
+    return;
+  }
   try {
     const payload = formObject(form);
     payload.cash = numberValue(payload.cash);
@@ -503,6 +1000,26 @@ async function handleAddLot(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      const nextPortfolio = window.PORTFOLIO_DEMO.addLot(appState.portfolio, {
+        ticker: data.ticker,
+        quantity: numberValue(data.quantity),
+        purchase_price: numberValue(data.purchase_price),
+        fees: numberValue(data.fees),
+        asset_class: data.asset_class || "equity",
+        purchased_at: data.purchased_at ? dateToIso(data.purchased_at) : new Date().toISOString(),
+        notes: data.notes || null,
+      });
+      resetManualForm(form, { asset_class: "equity", fees: "0" });
+      refreshDemoWorkspace(nextPortfolio, { tabId: "entry" });
+      toast("Demo lot added.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     const lot = {
@@ -518,6 +1035,7 @@ async function handleAddLot(event) {
       method: "POST",
       body: { lots: [lot] },
     });
+    invalidatePerformanceHistory();
     resetManualForm(form, { asset_class: "equity", fees: "0" });
     await refreshSelected(false);
     pollLatestMarketRefresh();
@@ -531,6 +1049,24 @@ async function handleAddCashTransaction(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      const nextPortfolio = window.PORTFOLIO_DEMO.addCashTransaction(appState.portfolio, {
+        transaction_type: data.transaction_type,
+        amount: numberValue(data.amount),
+        currency: data.currency ? data.currency.toUpperCase() : "USD",
+        occurred_at: data.occurred_at ? dateToIso(data.occurred_at) : new Date().toISOString(),
+        notes: data.notes || null,
+      });
+      resetManualForm(form);
+      refreshDemoWorkspace(nextPortfolio, { tabId: "entry" });
+      toast("Demo cash entry added.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     const payload = {
@@ -544,6 +1080,7 @@ async function handleAddCashTransaction(event) {
       method: "POST",
       body: payload,
     });
+    invalidatePerformanceHistory();
     resetManualForm(form);
     await refreshSelected(false);
     toast("Cash entry added.");
@@ -556,6 +1093,27 @@ async function handleAddTrade(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      const nextPortfolio = window.PORTFOLIO_DEMO.recordTrade(appState.portfolio, {
+        ticker: data.ticker,
+        side: data.side,
+        quantity: numberValue(data.quantity),
+        price: numberValue(data.price),
+        fees: numberValue(data.fees),
+        asset_class: data.asset_class || "equity",
+        occurred_at: data.occurred_at ? dateToIso(data.occurred_at) : new Date().toISOString(),
+        notes: data.notes || null,
+      });
+      resetManualForm(form, { asset_class: "equity", fees: "0" });
+      refreshDemoWorkspace(nextPortfolio, { tabId: "dashboard" });
+      toast("Demo trade recorded.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     const payload = {
@@ -572,6 +1130,7 @@ async function handleAddTrade(event) {
       method: "POST",
       body: payload,
     });
+    invalidatePerformanceHistory();
     resetManualForm(form, { asset_class: "equity", fees: "0" });
     await refreshSelected(false);
     toast("Trade recorded. Quote refresh will run automatically.");
@@ -584,6 +1143,22 @@ async function handleSaveSettings(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      const settings = {};
+      if (data.risk_free_rate !== "") settings.risk_free_rate = numberValue(data.risk_free_rate);
+      if (data.benchmark_symbols !== "") settings.benchmark_symbols = splitSymbols(data.benchmark_symbols);
+      if (data.cash_target_pct !== "") settings.cash_target_pct = numberValue(data.cash_target_pct);
+      const nextPortfolio = window.PORTFOLIO_DEMO.saveSettings(appState.portfolio, settings);
+      if (settings.benchmark_symbols?.length) appState.selectedBenchmarks = settings.benchmark_symbols.filter((symbol) => MAJOR_INDEXES.some((item) => item.symbol === symbol));
+      refreshDemoWorkspace(nextPortfolio, { tabId: "entry" });
+      toast("Demo settings updated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     const payload = {};
@@ -606,7 +1181,13 @@ async function handleCsvUpload(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    toast("CSV import is disabled in the demo. Sign in to import a real portfolio.", true);
+    return;
+  }
   try {
+    const resultBox = $("#csv-import-result");
+    if (resultBox) resultBox.textContent = "Reading brokerage export...";
     const data = new FormData(form);
     const result = await api(`/api/v1/portfolios/${appState.selectedPortfolioId}/upload-csv`, {
       method: "POST",
@@ -614,8 +1195,15 @@ async function handleCsvUpload(event) {
     });
     resetManualForm(form);
     await refreshSelected(false);
-    toast(`Imported ${result.imported_positions} positions. Quote refresh will run automatically.`);
+    const source = String(result.detected_format || "generic").replace(/^./, (letter) => letter.toUpperCase());
+    const warningText = (result.warnings || []).join(" ");
+    if (resultBox) {
+      resultBox.innerHTML = `<strong>${escapeHtml(source)} format detected.</strong> Imported ${result.imported_positions} position${result.imported_positions === 1 ? "" : "s"} from ${result.rows_read || 0} row${result.rows_read === 1 ? "" : "s"}.${warningText ? `<span>${escapeHtml(warningText)}</span>` : ""}`;
+    }
+    toast(`Imported ${result.imported_positions} ${source} position${result.imported_positions === 1 ? "" : "s"}. Quote refresh will run automatically.`);
   } catch (error) {
+    const resultBox = $("#csv-import-result");
+    if (resultBox) resultBox.textContent = error.message;
     toast(error.message, true);
   }
 }
@@ -624,6 +1212,17 @@ async function handleRiskAnalysis(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    appState.riskAnalysis = window.PORTFOLIO_DEMO.buildWorkspace({
+      portfolio: appState.portfolio,
+      selectedBenchmarks: appState.selectedBenchmarks,
+      optionsInput: appState.demoOptionsInput || currentDemoOptionsInput(),
+    }).riskAnalysis;
+    renderRisk();
+    renderDashboard();
+    toast("Risk view refreshed from the demo portfolio.");
+    return;
+  }
   try {
     const data = formObject(form);
     const portfolioTickers = appState.portfolio.positions.map((item) => item.ticker).join(",");
@@ -654,6 +1253,238 @@ async function handleRiskAnalysis(event) {
     renderRisk();
     renderDashboard();
     toast("Risk analysis updated.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function handleRiskTolerance(event) {
+  event.preventDefault();
+  if (!requirePortfolio()) return;
+  const form = event.currentTarget;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      const riskScore = Math.round(numberValue(data.risk_tolerance_score));
+      const bondSymbols = splitSymbols(data.bond_symbols || "");
+      const nextPortfolio = window.PORTFOLIO_DEMO.saveSettings(appState.portfolio, {
+        risk_tolerance_score: riskScore,
+        bond_watchlist: bondSymbols,
+      });
+      $("#bond-risk-score").value = riskScore;
+      refreshDemoWorkspace(nextPortfolio, { tabId: "risk" });
+      toast("Demo risk profile updated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
+  try {
+    const data = formObject(form);
+    const riskScore = Math.round(numberValue(data.risk_tolerance_score));
+    const bondSymbols = splitSymbols(data.bond_symbols || "");
+    const settings = await api(`/portfolios/${appState.selectedPortfolioId}/settings`, {
+      method: "PATCH",
+      body: { risk_tolerance_score: riskScore, bond_watchlist: bondSymbols },
+    });
+    appState.portfolio.settings = settings;
+    (appState.bondAssets?.assets || []).forEach((asset) => {
+      asset.monitored = bondSymbols.includes(asset.ticker);
+    });
+    appState.riskTolerance = await api(`/portfolios/${appState.selectedPortfolioId}/risk-tolerance`);
+    appState.riskReweight = await api(`/portfolios/${appState.selectedPortfolioId}/risk-tolerance/reweight`, {
+      method: "POST",
+      body: {
+        risk_score: riskScore,
+        bond_symbols: bondSymbols,
+        max_position_weight: numberValue(data.max_position_weight),
+      },
+    });
+    $("#bond-risk-score").value = riskScore;
+    renderRiskTolerance();
+    toast("Risk tolerance saved and target allocation updated.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function loadBondAssets(options = {}) {
+  if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    renderBonds();
+    renderBondStrategy();
+    return;
+  }
+  try {
+    appState.bondAssets = await api(`/portfolios/${appState.selectedPortfolioId}/bond-assets`);
+    if (!appState.bondRungs.length) setRecommendedBondRungs();
+    renderBonds();
+    if (options.autoRefresh && (appState.bondAssets.missing_tickers || []).length) {
+      maybeQueueBondRefresh();
+    }
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function maybeQueueBondRefresh() {
+  const portfolioId = appState.selectedPortfolioId;
+  if (!portfolioId || !(appState.bondAssets?.missing_tickers || []).length) return;
+  const throttleKey = `auto_bond_refresh_${portfolioId}`;
+  const lastAttempt = Number(sessionStorage.getItem(throttleKey) || 0);
+  if (Date.now() - lastAttempt < 60_000) return;
+  sessionStorage.setItem(throttleKey, String(Date.now()));
+  const monitored = bondMonitoredTickers();
+  const tickers = monitored.length ? monitored : appState.bondAssets.missing_tickers;
+  try {
+    const job = await api(`/portfolios/${portfolioId}/bond-assets/refresh`, {
+      method: "POST",
+      body: { tickers },
+    });
+    pollBondRefresh(job.id);
+    toast(`Queued cached bond prices for ${tickers.length} asset${tickers.length === 1 ? "" : "s"}.`);
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function handleBondRefresh() {
+  if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    toast("The demo bond catalog is fixed. Sign in to queue live bond market refreshes.");
+    return;
+  }
+  const tickers = bondMonitoredTickers();
+  try {
+    const job = await api(`/portfolios/${appState.selectedPortfolioId}/bond-assets/refresh`, {
+      method: "POST",
+      body: { tickers },
+    });
+    pollBondRefresh(job.id);
+    toast(tickers.length ? "Refreshing monitored bond prices." : "Refreshing the public bond catalog.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function pollBondRefresh(jobId, attempt = 0) {
+  if (!jobId || attempt >= 30 || !appState.selectedPortfolioId) return;
+  window.setTimeout(async () => {
+    try {
+      await refreshSelected(true);
+      await loadBondAssets({ autoRefresh: false });
+      const job = latestBackgroundJob("refresh_bond_market_data", jobId);
+      if (job && ["pending", "running"].includes(job.status)) pollBondRefresh(jobId, attempt + 1);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }, 2000);
+}
+
+function handleBondWatchlistChange(event) {
+  const input = event.target instanceof HTMLInputElement ? event.target.closest("input[data-bond-monitor]") : null;
+  if (!input || !appState.bondAssets) return;
+  const asset = appState.bondAssets.assets.find((item) => item.ticker === input.dataset.bondMonitor);
+  if (asset) asset.monitored = input.checked;
+}
+
+async function handleBondSaveWatchlist() {
+  if (!requirePortfolio() || !appState.bondAssets) return;
+  if (appState.demoMode) {
+    try {
+      const bondWatchlist = bondMonitoredTickers();
+      const nextPortfolio = window.PORTFOLIO_DEMO.saveSettings(appState.portfolio, { bond_watchlist: bondWatchlist });
+      refreshDemoWorkspace(nextPortfolio, { tabId: "bonds" });
+      $("#risk-tolerance-form").elements.bond_symbols.value = bondWatchlist.join(", ");
+      toast("Demo bond watchlist updated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
+  try {
+    const bondWatchlist = bondMonitoredTickers();
+    const settings = await api(`/portfolios/${appState.selectedPortfolioId}/settings`, {
+      method: "PATCH",
+      body: { bond_watchlist: bondWatchlist },
+    });
+    appState.portfolio.settings = settings;
+    $("#risk-tolerance-form").elements.bond_symbols.value = bondWatchlist.join(", ");
+    toast("Bond watchlist saved.");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+async function loadRecommendedBondStructure() {
+  if (!appState.bondAssets) await loadBondAssets({ autoRefresh: false });
+  setRecommendedBondRungs();
+  renderBondRungRows();
+}
+
+function setRecommendedBondRungs() {
+  const strategyType = $("#bond-strategy-type")?.value || "ladder";
+  const riskScore = Math.max(1, Math.min(10, Math.round(finiteNumber($("#bond-risk-score")?.value, 5))));
+  const savedRiskScore = appState.portfolio?.settings?.risk_tolerance_score ?? 5;
+  const serverSource = strategyType === "barbell"
+    ? appState.bondAssets?.recommended_barbell
+    : appState.bondAssets?.recommended_ladder;
+  const source = riskScore === savedRiskScore ? serverSource : riskFitBondRungs(riskScore, strategyType);
+  appState.bondRungs = (source || riskFitBondRungs(riskScore, strategyType)).map((rung) => ({ ...rung }));
+}
+
+function handleAddBondRung() {
+  if ($$("#bond-rung-rows tr").length) appState.bondRungs = bondRungsFromForm();
+  const last = appState.bondRungs.at(-1);
+  const years = Math.min(50, finiteNumber(last?.years_to_maturity, 0) + 1 || 1);
+  appState.bondRungs.push({
+    label: `${Number(years).toFixed(Number.isInteger(years) ? 0 : 1)}-year rung`,
+    years_to_maturity: years,
+    coupon_rate: 0.04,
+    yield_to_maturity: 0.04,
+    market_price_pct: 100,
+    face_value: 1000,
+    allocation_weight: 0,
+    payments_per_year: 2,
+  });
+  renderBondRungRows();
+}
+
+function handleRemoveBondRung(event) {
+  const target = event.target instanceof Element ? event.target.closest("button[data-bond-rung-remove]") : null;
+  if (!target) return;
+  const index = Number(target.dataset.bondRungRemove);
+  if (!Number.isInteger(index)) return;
+  appState.bondRungs = bondRungsFromForm();
+  appState.bondRungs.splice(index, 1);
+  if (!appState.bondRungs.length) handleAddBondRung();
+  else renderBondRungRows();
+}
+
+async function handleBondStrategy(event) {
+  event.preventDefault();
+  if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    appState.bondStrategy = window.PORTFOLIO_DEMO.buildBondStrategy();
+    renderBondStrategy();
+    toast("Demo bond strategy refreshed.");
+    return;
+  }
+  try {
+    const form = event.currentTarget;
+    const data = formObject(form);
+    const payload = {
+      strategy_type: data.strategy_type,
+      capital: numberValue(data.capital),
+      risk_score: Math.round(numberValue(data.risk_score)),
+      rungs: bondRungsFromForm(),
+    };
+    appState.bondStrategy = await api(`/portfolios/${appState.selectedPortfolioId}/bond-strategies/analyze`, {
+      method: "POST",
+      body: payload,
+    });
+    renderBondStrategy();
+    toast("Bond strategy calculated.");
   } catch (error) {
     toast(error.message, true);
   }
@@ -715,6 +1546,19 @@ function relativisticBSQuery(options = {}) {
 async function handleRelativisticBSRefresh(event) {
   event.preventDefault();
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      appState.demoOptionsInput = currentDemoOptionsInput();
+      appState.relativisticBs = window.PORTFOLIO_DEMO.runOptionsScenario(appState.demoOptionsInput, appState.portfolio, appState.marketData.quotes || []);
+      appState.relativisticBsHistory = window.PORTFOLIO_DEMO.buildOptionsHistory(appState.relativisticBs);
+      renderRelativisticBS();
+      persistDemoSession();
+      toast("Demo options suite updated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const query = relativisticBSQuery();
     appState.relativisticBs = await api(`/portfolios/${appState.selectedPortfolioId}/relativistic-bs?${query}`);
@@ -728,6 +1572,15 @@ async function handleRelativisticBSRefresh(event) {
 
 async function handleRelativisticBSForceRefresh() {
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    appState.demoOptionsInput = currentDemoOptionsInput();
+    appState.relativisticBs = window.PORTFOLIO_DEMO.runOptionsScenario(appState.demoOptionsInput, appState.portfolio, appState.marketData.quotes || []);
+    appState.relativisticBsHistory = window.PORTFOLIO_DEMO.buildOptionsHistory(appState.relativisticBs);
+    renderRelativisticBS();
+    persistDemoSession();
+    toast("Demo chain refreshed locally. Live cache refreshes are available after sign-in.");
+    return;
+  }
   try {
     const query = relativisticBSQuery({ force: true });
     appState.relativisticBs = await api(`/portfolios/${appState.selectedPortfolioId}/relativistic-bs?${query}`);
@@ -740,6 +1593,10 @@ async function handleRelativisticBSForceRefresh() {
 }
 
 async function loadRelativisticBSHistory() {
+  if (appState.demoMode) {
+    renderRelativisticBSHistory();
+    return;
+  }
   const payload = appState.relativisticBs;
   if (!payload || !appState.selectedPortfolioId) {
     appState.relativisticBsHistory = null;
@@ -776,10 +1633,63 @@ function handleUseVolatilityEstimate(event) {
   toast(`Baseline volatility set to ${pct(value)}. Run the suite again to reprice.`);
 }
 
+function handleRelbsSurfaceFilterChange() {
+  if (appState.relativisticBs) renderRelbsIVSurface($("#relativistic-bs-iv-surface-chart"), appState.relativisticBs);
+}
+
+function resetRelbsSurfaceFilters() {
+  $("#relativistic-bs-surface-expiry-min").value = "";
+  $("#relativistic-bs-surface-expiry-max").value = "";
+  $("#relativistic-bs-surface-moneyness-min").value = "0.75";
+  $("#relativistic-bs-surface-moneyness-max").value = "1.25";
+  handleRelbsSurfaceFilterChange();
+}
+
+function handleStrategyLabUniverseChange() {
+  const form = $("#strategy-lab-form");
+  if (!form) return;
+  const universe = form.elements.universe.value;
+  const tickers = strategyLabDefaultTickers(universe);
+  if (universe !== "custom") form.elements.tickers.value = tickers.join(", ");
+  if (!form.elements.options_symbol.value || !tickers.includes(form.elements.options_symbol.value.trim().toUpperCase())) {
+    form.elements.options_symbol.value = strategyLabOptionSymbol(formObject(form), tickers);
+  }
+  renderStrategyLab();
+}
+
+async function handleStrategyLab(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!requirePortfolio()) return;
+  try {
+    const data = formObject(form);
+    const tickers = strategyLabRequestedTickers(data);
+    if (!tickers.length) throw new Error("Choose at least one ticker for the strategy lab.");
+    if (tickers.length > 8) throw new Error("Use eight or fewer symbols in the lightweight strategy lab.");
+
+    const rangeName = data.strategy_range || "year";
+    const historySymbols = Array.from(new Set([...selectedBenchmarks(appState.portfolio), ...tickers]));
+    await loadPerformanceHistoryRange(appState.selectedPortfolioId, rangeName, historySymbols);
+    const history = combinedPerformanceHistory(appState.selectedPortfolioId, historySymbols) || activePerformanceHistory();
+    appState.strategyLab = buildStrategyLabResult(data, { tickers, rangeName, history });
+    renderStrategyLab();
+    const status = appState.strategyLab.points.length >= 2 ? "Strategy scenario updated." : "Strategy lab is waiting for cached history.";
+    toast(status, appState.strategyLab.points.length < 2);
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 async function handleHeatmap(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    appState.heatmap = window.PORTFOLIO_DEMO.buildHeatmap(appState.portfolio, appState.marketData.quotes || []);
+    renderHeatmap();
+    toast("Demo heatmap rebuilt.");
+    return;
+  }
   const data = formObject(form);
   try {
     appState.marketData = await api(`/portfolios/${appState.selectedPortfolioId}/market-data`).catch(() => appState.marketData);
@@ -798,6 +1708,23 @@ async function handleOptimization(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      appState.optimization = window.PORTFOLIO_DEMO.buildOptimization(
+        appState.portfolio,
+        data.objective,
+        numberValue(data.min_weight),
+        numberValue(data.max_weight),
+        data.risk_free_rate === "" ? appState.portfolio.settings.risk_free_rate : numberValue(data.risk_free_rate),
+      );
+      renderOptimization();
+      toast("Demo optimization updated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     $("#optimization-results").innerHTML = `<div class="activity-item"><strong>Running ${escapeHtml(data.objective)}</strong><span>Calculating target weights.</span></div>`;
@@ -820,6 +1747,24 @@ async function handleSimpleImpact(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      appState.simpleImpact = window.PORTFOLIO_DEMO.buildSimpleImpact(appState.portfolio, {
+        symbol: data.symbol,
+        side: data.side,
+        quantity: numberValue(data.quantity),
+        price: numberValue(data.price),
+        estimated_slippage_bps: numberValue(data.estimated_slippage_bps),
+        fee_rate_bps: numberValue(data.fee_rate_bps),
+      });
+      renderSimulation();
+      toast("Demo trade impact estimated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     appState.simpleImpact = await api(`/api/v1/portfolios/${appState.selectedPortfolioId}/simulate-trade-impact`, {
@@ -843,6 +1788,21 @@ async function handleRiskSimulation(event) {
   event.preventDefault();
   const form = event.currentTarget;
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    try {
+      const data = formObject(form);
+      const trade = { ticker: data.ticker, side: data.side };
+      if (data.quantity) trade.quantity = numberValue(data.quantity);
+      if (data.notional) trade.notional = numberValue(data.notional);
+      const covariance = data.covariance ? JSON.parse(data.covariance) : defaultCovariance(appState.portfolio);
+      appState.riskSimulation = window.PORTFOLIO_DEMO.buildRiskSimulation(appState.portfolio, trade, covariance);
+      renderSimulation();
+      toast("Demo risk simulation updated.");
+    } catch (error) {
+      toast(error.message, true);
+    }
+    return;
+  }
   try {
     const data = formObject(form);
     const trade = { ticker: data.ticker, side: data.side };
@@ -861,8 +1821,13 @@ async function handleRiskSimulation(event) {
 
 async function handleMarketRefresh() {
   if (!requirePortfolio()) return;
+  if (appState.demoMode) {
+    toast("Live market refresh is disabled in the demo. Sign in to use the cached quote worker.");
+    return;
+  }
   try {
     const job = await api(`/portfolios/${appState.selectedPortfolioId}/market-data/refresh`, { method: "POST" });
+    invalidatePerformanceHistory();
     await refreshSelected(false);
     pollMarketRefresh(job.id);
     toast(`${job.status === "completed" ? "Refreshed" : "Queued"} ${job.job_type}.`);
@@ -872,6 +1837,7 @@ async function handleMarketRefresh() {
 }
 
 async function maybeQueueMissingMarketData() {
+  if (appState.demoMode) return;
   const portfolioId = appState.selectedPortfolioId;
   const missing = appState.marketData?.missing_tickers || [];
   if (!portfolioId || missing.length === 0 || hasActiveMarketRefresh()) return;
@@ -896,6 +1862,7 @@ function hasActiveMarketRefresh() {
 }
 
 async function maybeLoadPerformanceHistory() {
+  if (appState.demoMode) return;
   const portfolio = appState.portfolio;
   if (!portfolio?.portfolio_id && !appState.selectedPortfolioId) return;
   const portfolioId = appState.selectedPortfolioId || portfolio.portfolio_id;
@@ -907,6 +1874,18 @@ async function maybeLoadPerformanceHistory() {
 }
 
 async function loadPerformanceHistoryRange(portfolioId, rangeName, benchmarks) {
+  if (appState.demoMode) {
+    const cacheKey = performanceHistoryCacheKey(portfolioId, rangeName, benchmarks);
+    if (!appState.performanceHistory[cacheKey]) {
+      const workspace = window.PORTFOLIO_DEMO.buildWorkspace({
+        portfolio: appState.portfolio,
+        selectedBenchmarks: benchmarks?.length ? benchmarks : appState.selectedBenchmarks,
+        optionsInput: appState.demoOptionsInput || currentDemoOptionsInput(),
+      });
+      Object.assign(appState.performanceHistory, workspace.performanceHistory || {});
+    }
+    return appState.performanceHistory[cacheKey] || null;
+  }
   const cacheKey = performanceHistoryCacheKey(portfolioId, rangeName, benchmarks);
   if (appState.performanceHistory[cacheKey]) return appState.performanceHistory[cacheKey];
   if (appState.performanceHistoryPending[cacheKey]) return appState.performanceHistoryPending[cacheKey];
@@ -940,6 +1919,22 @@ function performanceHistoryCacheKey(portfolioId, rangeName, benchmarks) {
   return `${portfolioId}:${rangeName}:${(benchmarks || []).join(",")}`;
 }
 
+function invalidatePerformanceHistory(portfolioId = appState.selectedPortfolioId) {
+  if (!portfolioId) {
+    appState.performanceHistory = {};
+    appState.performanceHistoryPending = {};
+  } else {
+    const prefix = `${portfolioId}:`;
+    Object.keys(appState.performanceHistory).forEach((key) => {
+      if (key.startsWith(prefix)) delete appState.performanceHistory[key];
+    });
+    Object.keys(appState.performanceHistoryPending).forEach((key) => {
+      if (key.startsWith(prefix)) delete appState.performanceHistoryPending[key];
+    });
+  }
+  appState.performanceZoom = null;
+}
+
 function activePerformanceHistory() {
   const portfolio = appState.portfolio;
   if (!portfolio) return null;
@@ -957,7 +1952,9 @@ function combinedPerformanceHistory(portfolioId, benchmarks = []) {
   Object.entries(appState.performanceHistory).forEach(([key, payload]) => {
     if (!key.startsWith(prefix) || !key.endsWith(suffix)) return;
     (payload.portfolio_series || []).forEach((point) => portfolioPoints.set(point.date.getTime(), point));
-    if (payload.coverage?.effective_start && (!coverage || new Date(payload.coverage.effective_start) < new Date(coverage.effective_start))) {
+    if (payload.coverage?.effective_start && (!coverage?.effective_start || new Date(payload.coverage.effective_start) > new Date(coverage.effective_start))) {
+      coverage = payload.coverage;
+    } else if (!coverage && payload.coverage) {
       coverage = payload.coverage;
     }
     (payload.series || []).forEach((line) => {
@@ -1069,6 +2066,10 @@ function pollPerformanceHistoryRefresh(jobId, attempt = 0) {
 }
 
 async function refreshSelected(keepMarket) {
+  if (appState.demoMode) {
+    refreshDemoWorkspace(appState.portfolio);
+    return;
+  }
   const id = appState.selectedPortfolioId;
   if (!id) return;
   const previousQuoteKey = quoteStateKey(appState.marketData);
@@ -1123,13 +2124,18 @@ function renderRuntime(error = null) {
 }
 
 function renderAuthState() {
-  const authed = Boolean(appState.token && appState.user);
+  const realAuthed = Boolean(appState.user && !appState.demoMode);
+  const authed = realAuthed || appState.demoMode;
   $("#auth-screen").hidden = authed;
   $("#app-shell").hidden = !authed;
   $("#auth-screen").setAttribute("aria-hidden", String(authed));
   $("#app-shell").setAttribute("aria-hidden", String(!authed));
-  $("#logout-button").hidden = !authed;
-  $("#user-pill").textContent = authed ? appState.user.email : "Signed out";
+  $("#logout-button").hidden = !realAuthed;
+  $("#demo-tour-button").hidden = !appState.demoMode;
+  $("#demo-exit-button").hidden = !appState.demoMode;
+  $("#demo-banner").hidden = !appState.demoMode;
+  $("#create-portfolio-form").closest(".sidebar-section").hidden = appState.demoMode;
+  $("#user-pill").textContent = authed ? (appState.demoMode ? "Demo session" : appState.user.email) : "Signed out";
   $("#user-pill").className = authed ? "pill" : "pill muted";
   if (authed) renderAccount();
 }
@@ -1144,7 +2150,10 @@ function renderAll() {
   renderDashboard();
   renderEntry();
   renderRisk();
+  renderRiskTolerance();
+  renderBonds();
   renderRelativisticBS();
+  renderStrategyLab();
   renderHeatmap();
   renderQuoteSnapshots();
   renderOptimization();
@@ -1152,6 +2161,7 @@ function renderAll() {
   renderMarket();
   renderAccount();
   applyGraphVisibility();
+  normalizeNumericInputs();
 }
 
 function renderPortfolioList() {
@@ -1329,42 +2339,112 @@ function renderRelativisticBS() {
     money(row.put.relativistic_price),
     relativisticBSPct(row.put.market_iv ?? row.put.bs_implied_vol_from_rel_price),
   ]), chain.map((row) => Math.abs(row.strike - payload.spot) === Math.min(...chain.map((item) => Math.abs(item.strike - payload.spot))) ? "atm-row" : ""));
+  normalizeNumericInputs($("#relativistic-bs"));
   renderRelativisticBSHistory();
+}
+
+function renderStrategyLab() {
+  if (!appState.portfolio) return;
+  const form = $("#strategy-lab-form");
+  const summary = $("#strategy-lab-summary");
+  const notes = $("#strategy-lab-notes");
+  const legend = $("#strategy-lab-legend");
+  const status = $("#strategy-lab-status");
+  const chart = $("#strategy-lab-chart");
+  if (!form || !summary || !notes || !legend || !status || !chart) return;
+
+  if (!form.elements.tickers.value) {
+    form.elements.tickers.value = strategyLabDefaultTickers(form.elements.universe.value).join(", ");
+  }
+  if (!form.elements.options_symbol.value) {
+    form.elements.options_symbol.value = strategyLabOptionSymbol(formObject(form), strategyLabDefaultTickers(form.elements.universe.value));
+  }
+
+  const result = appState.strategyLab;
+  if (!result) {
+    const optionSymbol = appState.relativisticBs?.symbol || "No symbol loaded";
+    summary.innerHTML = [
+      resultItem("Status", "Ready"),
+      resultItem("Default Universe", strategyLabDefaultTickers(form.elements.universe.value).join(", ") || "No holdings"),
+      resultItem("Data Source", "Cached history"),
+      resultItem("Option Underlying", form.elements.options_symbol.value || optionSymbol),
+      resultItem("Option Engine", "Covered calls and covered puts ready"),
+    ].join("");
+    notes.innerHTML = [
+      `<div class="activity-item"><strong>First run</strong><span>Choose a universe and run a scenario. If history is still being cached, the lab will tell you which symbols are missing.</span></div>`,
+      `<div class="activity-item"><strong>Strategy logic</strong><span>${escapeHtml(strategyLabStrategyDescription(form.elements.strategy_type.value || "buy_hold"))}</span></div>`,
+      `<div class="activity-item"><strong>Overlay engine</strong><span>Covered calls keep the linked stock sleeve and cap upside above the call strike. Covered puts are modeled here as cash-secured short puts on the linked underlying sleeve.</span></div>`,
+      `<div class="activity-item"><strong>Isolation</strong><span>Scenario output stays local to this tab and does not change holdings, lots, cash, saved option chains, or optimization inputs.</span></div>`,
+    ].join("");
+    legend.innerHTML = "";
+    status.textContent = "Ready";
+    status.className = "pill muted";
+    drawStrategyLabChart(chart, [], form.elements.strategy_range.value || "year");
+    return;
+  }
+
+  const metrics = result.metrics || {};
+  summary.innerHTML = [
+    resultItem("Strategy", strategyLabStrategyLabel(result.strategyType)),
+    resultItem("Symbols", result.tickers.join(", ")),
+    resultItem("Option Overlay", result.overlay?.summaryLabel || "None"),
+    resultItem("Overlay Source", result.overlay?.active ? result.overlay.source : "Not used"),
+    resultItem("Return", formatReturnAxis(metrics.returnPct)),
+    resultItem("Annualized Vol", pct(metrics.annualizedVolatility)),
+    resultItem("Max Drawdown", formatReturnAxis(metrics.maxDrawdownPct)),
+    resultItem("Latest Value", money(metrics.latestValue)),
+    resultItem("Observations", String(metrics.observations || 0)),
+    resultItem("Overlay Detail", result.overlay?.active ? `${result.overlay.symbol} · ${result.overlay.detailLabel}` : "None"),
+  ].join("");
+  notes.innerHTML = result.notes.map((note) => (
+    `<div class="activity-item"><strong>${escapeHtml(note.title)}</strong><span>${escapeHtml(note.body)}</span></div>`
+  )).join("");
+  legend.innerHTML = result.series.map((line, index) => {
+    const value = lineReturnPct(line);
+    const dash = index > 0 ? " dashed" : "";
+    return `<div class="legend-item"><span class="legend-swatch${dash}" style="--series-color:${escapeHtml(line.color)}"></span><span>${escapeHtml(line.label)}</span><strong class="${returnClass(value)}">${Number.isFinite(value) ? formatReturnAxis(value) : "--"}</strong></div>`;
+  }).join("");
+  status.textContent = result.points.length >= 2 ? "Scenario ready" : "Needs history";
+  status.className = result.points.length >= 2 ? "pill" : "pill muted";
+  drawStrategyLabChart(chart, result.series, result.rangeName);
 }
 
 function renderRelativisticBSHistory() {
   const payload = appState.relativisticBsHistory;
-  const points = payload?.points || [];
+  const points = relbsValidHistoryPoints(payload?.points || []);
+  const captureCount = new Set(points.map((point) => new Date(point.as_of).getTime())).size;
   const note = $("#relativistic-bs-history-note");
-  if (note) note.textContent = payload?.note || "Run the live suite to begin capturing dated option-chain snapshots.";
+  if (note) {
+    const base = payload?.note || "Run the live suite to begin capturing dated option-chain snapshots.";
+    note.textContent = `${base} Saved captures matching this expiry: ${captureCount}.`;
+  }
   const charts = [
-    ["#relativistic-bs-history-iv-chart", "ATM Implied Volatility", "atm_iv", ".1%", "#0f766e"],
-    ["#relativistic-bs-history-gamma-chart", "Net Gamma Exposure", "total_gamma_exposure", ",.0f", "#8b1e3f"],
-    ["#relativistic-bs-history-volume-chart", "Total Chain Volume", "total_volume", ",.0f", "#2f6f9f"],
+    ["#relativistic-bs-history-iv-chart", "ATM Implied Volatility", "atm_iv", ".1%", "#0f766e", "%{y:.1%}"],
+    ["#relativistic-bs-history-gamma-chart", "Net Gamma Exposure", "total_gamma_exposure", ",.0f", "#8b1e3f", "%{y:,.0f}"],
+    ["#relativistic-bs-history-volume-chart", "Total Chain Volume", "total_volume", ",.0f", "#2f6f9f", "%{y:,.0f}"],
   ];
-  charts.forEach(([selector, title, field, tickformat, color]) => {
+  charts.forEach(([selector, title, field, tickformat, color, hoverValue]) => {
     const container = $(selector);
     if (!container) return;
-    if (!points.length) {
-      renderRelbsNoData(container, `No ${title.toLowerCase()}`, "Fresh suite captures will appear here over time.");
+    const trace = relbsDatedTrace(title, points, field, color, "solid", hoverValue);
+    if (captureCount < 2 || trace.x.length < 2) {
+      renderRelbsNoData(container, `No ${title.toLowerCase()} trend yet`, "Refresh the live chain later to add a second saved capture.");
       return;
     }
-    renderRelbsDatedPlot(container, title, [
-      relbsTrace(title, points.map((point) => point.as_of), points.map((point) => point[field]), color),
-    ], { tickformat });
+    renderRelbsDatedPlot(container, title, [trace], { tickformat });
   });
   const priceContainer = $("#relativistic-bs-history-price-chart");
   if (!priceContainer) return;
-  if (!points.length) {
-    renderRelbsNoData(priceContainer, "No ATM pricing history", "Fresh suite captures will appear here over time.");
+  const priceTraces = [
+    relbsDatedTrace("Market midpoint", points, "atm_market_price", "#2f6f9f", "solid", "%{y:$,.2f}"),
+    relbsDatedTrace("Black-Scholes", points, "atm_bs_price", "#0f766e", "dash", "%{y:$,.2f}"),
+    relbsDatedTrace("Relativistic", points, "atm_relativistic_price", "#8b1e3f", "solid", "%{y:$,.2f}"),
+  ].filter((trace) => trace.x.length >= 2);
+  if (captureCount < 2 || !priceTraces.length) {
+    renderRelbsNoData(priceContainer, "No ATM pricing history trend yet", "Refresh the live chain later to add a second saved capture.");
     return;
   }
-  const dates = points.map((point) => point.as_of);
-  renderRelbsDatedPlot(priceContainer, "ATM Call Pricing History", [
-    relbsTrace("Market midpoint", dates, points.map((point) => point.atm_market_price), "#2f6f9f"),
-    relbsTrace("Black-Scholes", dates, points.map((point) => point.atm_bs_price), "#0f766e", "dash"),
-    relbsTrace("Relativistic", dates, points.map((point) => point.atm_relativistic_price), "#8b1e3f"),
-  ], { tickprefix: "$" });
+  renderRelbsDatedPlot(priceContainer, "ATM Call Pricing History", priceTraces, { tickprefix: "$" });
 }
 
 function renderRelbsDatedPlot(container, title, traces, yOverrides = {}) {
@@ -1461,11 +2541,11 @@ function renderRelbsVolatilitySmile(container, payload) {
   }
   const x = rows.map((row) => row.strike);
   const traces = [
-    relbsTrace("Call IV", x, rows.map((row) => row.call_iv), "#0f766e", "solid", relbsPctHover()),
-    relbsTrace("Put IV", x, rows.map((row) => row.put_iv), "#8b1e3f", "solid", relbsPctHover()),
-    relbsTrace("Average IV", x, rows.map((row) => row.average_iv), "#2f6f9f", "solid", relbsPctHover()),
-    relbsTrace("Baseline sigma", x, rows.map((row) => row.baseline_iv), "#a35f00", "dash", relbsPctHover()),
-  ];
+    relbsNumericTrace("Call IV", x, rows.map((row) => row.call_iv), "#0f766e", "solid", relbsPctHover()),
+    relbsNumericTrace("Put IV", x, rows.map((row) => row.put_iv), "#8b1e3f", "solid", relbsPctHover()),
+    relbsNumericTrace("Average IV", x, rows.map((row) => row.average_iv), "#2f6f9f", "solid", relbsPctHover()),
+    relbsNumericTrace("Baseline sigma", x, rows.map((row) => row.baseline_iv), "#a35f00", "dash", relbsPctHover()),
+  ].filter((trace) => trace.x.length);
   renderRelbsPlot(container, traces, {
     title: `${payload.symbol} Volatility Smile`,
     xaxis: relbsStrikeAxis("Strike", { tickprefix: "$" }),
@@ -1523,9 +2603,13 @@ function renderRelbsGammaExposure(container, payload) {
 }
 
 function renderRelbsIVSurface(container, payload) {
-  const rows = payload.iv_surface || [];
+  updateRelbsSurfaceFilterBounds(payload.iv_surface || []);
+  const filters = relbsSurfaceFilters();
+  const rows = relbsFiniteSurfaceRows(payload.iv_surface || [], filters);
+  const note = $("#relativistic-bs-surface-filter-note");
+  if (note) note.textContent = relbsSurfaceFilterNote(rows, filters);
   if (!rows.length) {
-    renderRelbsNoData(container, "No IV surface", "The IV surface needs multiple yfinance expirations with listed implied volatility.");
+    renderRelbsNoData(container, "No IV surface in this view", "Adjust the expiry or moneyness range. The IV surface needs multiple yfinance expirations with listed implied volatility.");
     return;
   }
   const grid = relbsIVSurfaceGrid(rows);
@@ -1541,10 +2625,10 @@ function renderRelbsIVSurface(container, payload) {
   } : {
     type: "scatter3d",
     mode: "markers",
-    x: rows.map((row) => Number(row.moneyness)),
-    y: rows.map((row) => Math.max(1, Math.round(Number(row.tau) * 365.25))),
-    z: rows.map((row) => Number(row.average_iv)),
-    marker: { size: 5, color: rows.map((row) => Number(row.average_iv)), colorscale: "Viridis", colorbar: { title: { text: "IV", font: { color: theme.text } }, tickformat: ".0%", tickfont: { color: theme.text } } },
+    x: grid.points.map((row) => row.moneyness),
+    y: grid.points.map((row) => row.days),
+    z: grid.points.map((row) => row.averageIv),
+    marker: { size: 5, color: grid.points.map((row) => row.averageIv), colorscale: "Viridis", colorbar: { title: { text: "IV", font: { color: theme.text } }, tickformat: ".0%", tickfont: { color: theme.text } } },
     hovertemplate: "Moneyness %{x:.2f}<br>DTE %{y:.0f}<br>IV %{z:.1%}<extra></extra>",
   };
   renderRelbsPlot(container, [trace], {
@@ -1554,25 +2638,104 @@ function renderRelbsIVSurface(container, payload) {
       yaxis: relbsSceneAxis("Days to expiry"),
       zaxis: relbsSceneAxis("Implied Volatility", { tickformat: ".0%" }),
     },
+    height: 640,
     margin: { t: 48, r: 8, b: 8, l: 8 },
   });
 }
 
 function relbsIVSurfaceGrid(rows) {
-  const moneyness = Array.from(new Set(rows.map((row) => Number(row.moneyness).toFixed(2)))).map(Number).sort((a, b) => a - b);
-  const days = Array.from(new Set(rows.map((row) => Math.max(1, Math.round(Number(row.tau) * 365.25))))).sort((a, b) => a - b);
-  const byCell = new Map(rows.map((row) => {
-    const key = `${Math.max(1, Math.round(Number(row.tau) * 365.25))}:${Number(row.moneyness).toFixed(2)}`;
-    return [key, Number(row.average_iv)];
+  const points = relbsFiniteSurfaceRows(rows).map((row) => ({
+    moneyness: Number(row.moneyness),
+    days: Math.max(1, Math.round(Number(row.tau) * 365.25)),
+    averageIv: Number(row.average_iv),
   }));
+  const profiles = new Map();
+  points.forEach((point) => {
+    const profile = profiles.get(point.days) || [];
+    profile.push(point);
+    profiles.set(point.days, profile);
+  });
+  const usableProfiles = Array.from(profiles.entries()).map(([day, profile]) => [
+    day,
+    profile.sort((left, right) => left.moneyness - right.moneyness),
+  ]).filter(([, profile]) => profile.length >= 2).sort(([left], [right]) => left - right);
+  if (usableProfiles.length < 2) return { moneyness: [], days: [], values: [], points };
+  const minMoneyness = Math.max(...usableProfiles.map(([, profile]) => profile[0].moneyness));
+  const maxMoneyness = Math.min(...usableProfiles.map(([, profile]) => profile[profile.length - 1].moneyness));
+  if (!Number.isFinite(minMoneyness) || !Number.isFinite(maxMoneyness) || maxMoneyness - minMoneyness < 0.04) {
+    return { moneyness: [], days: [], values: [], points };
+  }
+  const steps = 30;
+  const moneyness = Array.from({ length: steps + 1 }, (_, index) => (
+    minMoneyness + ((maxMoneyness - minMoneyness) * index / steps)
+  ));
+  const days = usableProfiles.map(([day]) => day);
   return {
     moneyness,
     days,
-    values: days.map((day) => moneyness.map((moneyValue) => {
-      const value = byCell.get(`${day}:${moneyValue.toFixed(2)}`);
-      return Number.isFinite(value) ? value : null;
-    })),
+    values: usableProfiles.map(([, profile]) => moneyness.map((moneyValue) => relbsInterpolatedIV(profile, moneyValue))),
+    points,
   };
+}
+
+function relbsInterpolatedIV(profile, moneyness) {
+  if (!profile.length || moneyness < profile[0].moneyness || moneyness > profile[profile.length - 1].moneyness) return null;
+  for (let index = 0; index < profile.length; index += 1) {
+    const right = profile[index];
+    if (Math.abs(right.moneyness - moneyness) < 1e-9) return right.averageIv;
+    if (right.moneyness < moneyness || index === 0) continue;
+    const left = profile[index - 1];
+    const span = right.moneyness - left.moneyness;
+    if (span <= 0) return right.averageIv;
+    const ratio = (moneyness - left.moneyness) / span;
+    return left.averageIv + (right.averageIv - left.averageIv) * ratio;
+  }
+  return profile[profile.length - 1].averageIv;
+}
+
+function relbsFiniteSurfaceRows(rows, filters = {}) {
+  const minMoneyness = finiteNumber(filters.minMoneyness, 0.5);
+  const maxMoneyness = finiteNumber(filters.maxMoneyness, 1.5);
+  return rows.filter((row) => {
+    const moneyness = Number(row.moneyness);
+    const tau = Number(row.tau);
+    const averageIv = Number(row.average_iv);
+    const expiry = String(row.expiry_date || "");
+    return Number.isFinite(moneyness) && moneyness >= minMoneyness && moneyness <= maxMoneyness
+      && Number.isFinite(tau) && tau > 0
+      && Number.isFinite(averageIv) && averageIv >= 0.02 && averageIv <= 3
+      && (!filters.expiryMin || expiry >= filters.expiryMin)
+      && (!filters.expiryMax || expiry <= filters.expiryMax);
+  });
+}
+
+function relbsSurfaceFilters() {
+  const rawMin = finiteNumber($("#relativistic-bs-surface-moneyness-min")?.value, 0.75);
+  const rawMax = finiteNumber($("#relativistic-bs-surface-moneyness-max")?.value, 1.25);
+  return {
+    expiryMin: $("#relativistic-bs-surface-expiry-min")?.value || "",
+    expiryMax: $("#relativistic-bs-surface-expiry-max")?.value || "",
+    minMoneyness: Math.max(0.5, Math.min(rawMin, rawMax)),
+    maxMoneyness: Math.min(1.5, Math.max(rawMin, rawMax)),
+  };
+}
+
+function updateRelbsSurfaceFilterBounds(rows) {
+  const expiries = rows.map((row) => String(row.expiry_date || "")).filter(Boolean).sort();
+  const minExpiry = expiries[0] || "";
+  const maxExpiry = expiries[expiries.length - 1] || "";
+  ["#relativistic-bs-surface-expiry-min", "#relativistic-bs-surface-expiry-max"].forEach((selector) => {
+    const input = $(selector);
+    if (!input) return;
+    input.min = minExpiry;
+    input.max = maxExpiry;
+  });
+}
+
+function relbsSurfaceFilterNote(rows, filters) {
+  const expiries = Array.from(new Set(rows.map((row) => row.expiry_date))).filter(Boolean).sort();
+  const expiryText = expiries.length ? `${expiries[0]} through ${expiries[expiries.length - 1]}` : "no matching expiries";
+  return `Showing ${rows.length} listed IV observations across ${expiryText}, with moneyness ${filters.minMoneyness.toFixed(2)} to ${filters.maxMoneyness.toFixed(2)}. View controls use loaded snapshot data only.`;
 }
 
 function renderRelbsPlot(container, traces, layoutOverrides = {}) {
@@ -1636,6 +2799,38 @@ function relbsTrace(name, x, y, color, dash = "solid", hovertemplate = "%{x:$,.2
   };
 }
 
+function relbsNumericTrace(name, x, y, color, dash = "solid", hovertemplate = "%{x:$,.2f}<br>%{y:$,.2f}<extra></extra>") {
+  const points = x.map((value, index) => ({ x: Number(value), y: Number(y[index]) }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  return {
+    ...relbsTrace(name, points.map((point) => point.x), points.map((point) => point.y), color, dash, hovertemplate),
+    mode: "lines+markers",
+    marker: { color, size: 5 },
+    connectgaps: true,
+  };
+}
+
+function relbsDatedTrace(name, points, field, color, dash = "solid", valueTemplate = "%{y:,.2f}") {
+  const clean = points.map((point) => ({
+    x: point.as_of,
+    time: new Date(point.as_of).getTime(),
+    y: Number(point[field]),
+  })).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.y));
+  return relbsTrace(
+    name,
+    clean.map((point) => point.x),
+    clean.map((point) => point.y),
+    color,
+    dash,
+    `%{x|%b %d, %Y %H:%M}<br>${valueTemplate}<extra></extra>`,
+  );
+}
+
+function relbsValidHistoryPoints(points) {
+  return points.filter((point) => Number.isFinite(new Date(point.as_of).getTime()))
+    .sort((left, right) => new Date(left.as_of) - new Date(right.as_of));
+}
+
 function relbsPctHover() {
   return "%{x:$,.2f}<br>%{y:.1%}<extra></extra>";
 }
@@ -1686,21 +2881,28 @@ function relativisticBSPct(value) {
 function renderRisk() {
   const risk = appState.riskAnalysis?.charts?.risk;
   const rawCorrelation = $("#raw-correlation-heatmap");
+  const insights = $("#risk-correlation-insights");
+  const threshold = riskCorrelationThreshold();
+  const thresholdOutput = $("#risk-correlation-threshold-value");
+  if (thresholdOutput) thresholdOutput.textContent = threshold.toFixed(2);
   if (!risk) {
     $("#risk-summary").innerHTML = `<div class="activity-item"><strong>No risk run</strong><span>Run analysis from cached market history. Manual price rows are optional.</span></div>`;
     $("#risk-volatility").innerHTML = `<div class="activity-item"><strong>No volatility estimate</strong><span>Use one year of cached prices for a practical first pass.</span></div>`;
     $("#correlation-heatmap").innerHTML = "";
     $("#risk-covariance-heatmap").innerHTML = "";
     if (rawCorrelation) rawCorrelation.innerHTML = "";
+    if (insights) insights.innerHTML = `<div class="activity-item"><strong>No pair scan yet</strong><span>Run risk analysis to rank the strongest relationships.</span></div>`;
     return;
   }
 
   const summary = riskSummary(risk);
   const annualization = finiteNumber(risk.annualization_factor, 252);
+  const pairSamples = minimumPairwiseObservations(risk.pairwise_observations);
   $("#risk-summary").innerHTML = [
     resultItem("Annualized Portfolio Vol", pct(summary.portfolioVolatility * Math.sqrt(annualization))),
     resultItem("Daily Portfolio Vol", pct(summary.portfolioVolatility)),
     resultItem("Observations", String(risk.observations || 0)),
+    resultItem("Minimum Pair Samples", String(pairSamples)),
     resultItem("Highest Single-Asset Vol", summary.highestVolatilityLabel),
     resultItem("Average Correlation", fixed(summary.averageCorrelation, 2)),
     resultItem("Strongest Pair", summary.strongestPairLabel),
@@ -1710,13 +2912,185 @@ function renderRisk() {
     const annualized = finiteNumber(point.value, 0) * Math.sqrt(annualization);
     return { label: point.label, value: annualized, display: pct(annualized) };
   }));
-  renderMatrix($("#correlation-heatmap"), risk.cleaned_correlation || risk.correlation, { digits: 2 });
-  if (rawCorrelation) renderMatrix(rawCorrelation, risk.correlation, { digits: 2 });
+  const correlationOptions = {
+    digits: 2,
+    threshold,
+    hideWeakLabels: true,
+    color: (value, meta) => correlationTemperatureColor(value, threshold, meta.diagonal),
+    titleFormatter: (value, meta) => `${meta.rowTicker} / ${meta.columnTicker}: correlation ${value.toFixed(3)}${!meta.diagonal && Math.abs(value) < threshold ? " (muted by display threshold)" : ""}`,
+  };
+  const displayCorrelation = risk.cleaned_correlation || risk.correlation;
+  renderMatrix($("#correlation-heatmap"), displayCorrelation, correlationOptions);
+  if (rawCorrelation) renderMatrix(rawCorrelation, risk.correlation, correlationOptions);
   renderMatrix($("#risk-covariance-heatmap"), risk.cleaned_covariance || risk.covariance, {
     transform: (value) => value * annualization,
-    formatter: formatCovariance,
+    formatter: (value, meta) => meta.diagonal ? `${pct(Math.sqrt(Math.max(value, 0)))} vol` : formatCovariance(value),
+    titleFormatter: (value, meta) => meta.diagonal
+      ? `${meta.rowTicker} annualized variance ${formatCovariance(value)}; annualized volatility ${pct(Math.sqrt(Math.max(value, 0)))}`
+      : `${meta.rowTicker} / ${meta.columnTicker}: annualized covariance ${formatCovariance(value)}`,
     normalizeColor: true,
   });
+  if (insights) insights.innerHTML = correlationInsightsHtml(displayCorrelation, threshold);
+}
+
+function renderRiskTolerance() {
+  const form = $("#risk-tolerance-form");
+  const summary = $("#risk-profile-summary");
+  const description = $("#risk-profile-description");
+  const results = $("#risk-reweight-results");
+  const status = $("#risk-tolerance-status");
+  if (!form || !summary || !description || !results || !status || !appState.portfolio) return;
+  const score = Math.max(1, Math.min(10, Math.round(finiteNumber(form.elements.risk_tolerance_score.value, 5))));
+  $("#risk-tolerance-score-value").textContent = String(score);
+  const savedProfile = appState.riskTolerance?.profile;
+  const profile = savedProfile?.score === score ? savedProfile : riskProfilePreview(score);
+  const current = appState.riskTolerance?.current_model;
+  const target = profile.target_allocation;
+  summary.innerHTML = [
+    resultItem("Selected Score", `${score} - ${profile.label}`),
+    resultItem("Target Volatility", pct(profile.target_volatility)),
+    resultItem("Target Equity", pct(target.equity)),
+    resultItem("Target Bonds", pct(target.bonds)),
+    resultItem("Target Cash", pct(target.cash)),
+    resultItem("Current Model Vol", current ? pct(current.model_volatility) : "--"),
+    resultItem("Current Model Score", current ? String(current.estimated_score) : "--"),
+  ].join("");
+  description.innerHTML = [
+    `<div class="activity-item"><strong>What this score means</strong><span>${escapeHtml(profile.description)}</span></div>`,
+    `<div class="activity-item"><strong>How to read volatility</strong><span>${escapeHtml(profile.volatility_explanation)}</span></div>`,
+  ].join("");
+  const savedScore = appState.portfolio.settings?.risk_tolerance_score ?? 5;
+  status.textContent = score === savedScore ? `Saved score ${savedScore}` : `Preview score ${score}`;
+  status.className = score === savedScore ? "pill" : "pill muted";
+
+  const reweight = appState.riskReweight;
+  if (!reweight) {
+    results.innerHTML = `<div class="activity-item"><strong>No target preview yet</strong><span>Save the score to calculate target values and estimated trade deltas. No trades are executed.</span></div>`;
+    return;
+  }
+  const notes = (reweight.notes || []).map((note) => `<div class="activity-item"><strong>Allocation note</strong><span>${escapeHtml(note)}</span></div>`).join("");
+  const table = document.createElement("div");
+  renderTableHtml(table, ["Asset", "Bucket", "Current", "Target", "Value Delta", "Estimated Units"], reweight.allocations.map((item) => [
+    `<strong>${escapeHtml(item.symbol)}</strong>`,
+    escapeHtml(item.risk_bucket),
+    `${pct(item.current_weight)} (${money(item.current_value)})`,
+    `${pct(item.target_weight)} (${money(item.target_value)})`,
+    `<span class="${item.trade_value_delta >= 0 ? "positive" : "negative"}">${signedMoney(item.trade_value_delta)}</span>`,
+    item.estimated_quantity_delta == null ? "--" : fixed(item.estimated_quantity_delta, 3),
+  ]));
+  results.innerHTML = `${notes}${table.innerHTML}`;
+}
+
+function riskProfilePreview(score) {
+  const [label, targetVolatility, equity, bonds, cash] = RISK_SCORE_TARGETS[score] || RISK_SCORE_TARGETS[5];
+  let description;
+  if (score <= 2) description = "Prioritizes smaller modeled drawdowns and liquidity. Most capital is assigned to bonds and cash, so long-run upside may be lower.";
+  else if (score <= 4) description = "Accepts limited fluctuations while keeping a substantial fixed-income cushion. Bond prices can still fall when rates or credit spreads rise.";
+  else if (score <= 6) description = "Balances growth and stability. Temporary double-digit declines remain plausible in diversified portfolios.";
+  else if (score <= 8) description = "Prioritizes growth and accepts larger market swings and potentially prolonged recovery periods.";
+  else description = "Accepts very large fluctuations for maximum modeled growth exposure. Severe drawdowns are possible.";
+  return {
+    score,
+    label,
+    description,
+    target_volatility: targetVolatility,
+    target_allocation: { equity, bonds, cash },
+    volatility_explanation: "Target volatility estimates typical annual variability; it is not a maximum loss, guarantee, or confidence boundary.",
+  };
+}
+
+function renderBonds() {
+  const table = $("#bond-assets-table");
+  const note = $("#bond-market-note");
+  if (!table || !note) return;
+  const payload = appState.bondAssets;
+  if (!payload) {
+    note.textContent = "Open this tab to load the public bond catalog and cached prices.";
+    table.innerHTML = `<div class="activity-item"><strong>Catalog not loaded</strong><span>Bond assets load only when this tab is opened.</span></div>`;
+    renderBondStrategy();
+    return;
+  }
+  note.textContent = payload.note;
+  const category = $("#bond-category-filter").value;
+  const monitoredOnly = $("#bond-watchlist-only").checked;
+  const assets = payload.assets.filter((asset) => (
+    (category === "all" || asset.category === category) && (!monitoredOnly || asset.monitored)
+  ));
+  renderTableHtml(table, ["Monitor", "Ticker", "Asset", "Category", "Term Proxy", "Risk", "Price", "Day", "Fetched", "Details"], assets.map((asset) => [
+    `<input type="checkbox" data-bond-monitor="${escapeHtml(asset.ticker)}" ${asset.monitored ? "checked" : ""} aria-label="Monitor ${escapeHtml(asset.ticker)}">`,
+    `<strong>${escapeHtml(asset.ticker)}</strong>`,
+    `<span class="bond-asset-name">${escapeHtml(asset.name)}</span><small>${escapeHtml(asset.description)}</small>`,
+    escapeHtml(asset.category),
+    `${escapeHtml(asset.duration_bucket)} (${fixed(asset.term_proxy_years, 2)}y)`,
+    `${asset.risk_level}/10`,
+    asset.price == null ? "--" : money(asset.price),
+    asset.daily_return_pct == null ? "--" : `<span class="${asset.daily_return_pct >= 0 ? "positive" : "negative"}">${signedPct(asset.daily_return_pct / 100)}</span>`,
+    asset.fetched_at ? shortDateTime(asset.fetched_at) : "Not cached",
+    `<a href="${escapeHtml(asset.issuer_url)}" target="_blank" rel="noopener noreferrer">Issuer page</a>`,
+  ]));
+  if (!appState.bondRungs.length) setRecommendedBondRungs();
+  if (!$("#bond-rung-rows").children.length) renderBondRungRows();
+  renderBondStrategy();
+}
+
+function renderBondRungRows() {
+  const container = $("#bond-rung-rows");
+  if (!container) return;
+  container.innerHTML = appState.bondRungs.map((rung, index) => `
+    <tr data-bond-rung="${index}">
+      <td><input data-field="label" value="${escapeHtml(rung.label || `Rung ${index + 1}`)}" aria-label="Rung label"></td>
+      <td><input data-field="years_to_maturity" type="number" min="0.25" max="50" step="0.25" value="${finiteNumber(rung.years_to_maturity, 1)}" aria-label="Years to maturity"></td>
+      <td><input data-field="coupon_rate" type="number" min="0" max="100" step="0.01" value="${fixed(finiteNumber(rung.coupon_rate, 0.04) * 100, 2)}" aria-label="Coupon percent"></td>
+      <td><input data-field="yield_to_maturity" type="number" min="-99" max="100" step="0.01" value="${fixed(finiteNumber(rung.yield_to_maturity, 0.04) * 100, 2)}" aria-label="Yield to maturity percent"></td>
+      <td><input data-field="market_price_pct" type="number" min="0.01" max="1000" step="0.01" value="${fixed(finiteNumber(rung.market_price_pct, 100), 2)}" aria-label="Market price per 100"></td>
+      <td><input data-field="allocation_weight" type="number" min="0" max="100" step="0.1" value="${fixed(finiteNumber(rung.allocation_weight, 0) * 100, 1)}" aria-label="Allocation weight percent"></td>
+      <td><select data-field="payments_per_year" aria-label="Coupon payments per year"><option value="1" ${Number(rung.payments_per_year) === 1 ? "selected" : ""}>Annual</option><option value="2" ${Number(rung.payments_per_year || 2) === 2 ? "selected" : ""}>Semiannual</option><option value="4" ${Number(rung.payments_per_year) === 4 ? "selected" : ""}>Quarterly</option><option value="12" ${Number(rung.payments_per_year) === 12 ? "selected" : ""}>Monthly</option></select></td>
+      <td><button class="icon-button danger-link" type="button" data-bond-rung-remove="${index}" title="Remove rung" aria-label="Remove rung">X</button></td>
+    </tr>`).join("");
+  normalizeNumericInputs(container);
+}
+
+function renderBondStrategy() {
+  const summary = $("#bond-strategy-summary");
+  const notes = $("#bond-strategy-notes");
+  const results = $("#bond-strategy-results");
+  const cashFlows = $("#bond-cash-flow-results");
+  if (!summary || !notes || !results || !cashFlows) return;
+  const strategy = appState.bondStrategy;
+  if (!strategy) {
+    summary.innerHTML = "";
+    notes.innerHTML = `<div class="activity-item"><strong>No calculation yet</strong><span>Load a risk-fit structure, adjust the assumptions, and calculate the strategy.</span></div>`;
+    results.innerHTML = "";
+    cashFlows.innerHTML = "";
+    return;
+  }
+  const metrics = strategy.summary;
+  summary.innerHTML = [
+    metricCard("Allocated", money(metrics.allocated_capital)),
+    metricCard("Annual Income", money(metrics.annual_income)),
+    metricCard("Current Yield", pct(metrics.portfolio_current_yield)),
+    metricCard("Weighted YTM", pct(metrics.weighted_yield_to_maturity)),
+    metricCard("Modified Duration", fixed(metrics.weighted_modified_duration, 2)),
+    metricCard("Modeled Annual Return", pct(metrics.weighted_annualized_return)),
+  ].join("");
+  notes.innerHTML = (strategy.notes || []).map((item) => `<div class="activity-item"><strong>Model note</strong><span>${escapeHtml(item)}</span></div>`).join("");
+  renderTableHtml(results, ["Rung", "Weight", "Price / $100", "Model Price", "Coupon", "YTM", "Duration", "Annual Income", "Annualized Return"], strategy.rungs.map((rung) => [
+    escapeHtml(rung.label),
+    pct(rung.weight),
+    fixed(rung.market_price_pct, 2),
+    fixed(rung.theoretical_price_pct, 2),
+    pct(rung.coupon_rate),
+    pct(rung.yield_to_maturity),
+    fixed(rung.modified_duration, 2),
+    money(rung.annual_income),
+    pct(rung.annualized_return),
+  ]));
+  renderTable(cashFlows, ["Year", "Coupon Income", "Principal", "Total Cash Flow"], strategy.cash_flow_schedule.map((item) => [
+    String(item.year),
+    money(item.coupon_income),
+    money(item.principal),
+    money(item.total_cash_flow),
+  ]));
 }
 
 async function renderHeatmap() {
@@ -1912,9 +3286,11 @@ function renderAccount() {
   if (!appState.user) return;
   $("#account-profile").innerHTML = [
     resultItem("Email", appState.user.email),
-    resultItem("Verified", appState.user.email_verified ? "Yes" : "No"),
+    resultItem("Verified", appState.demoMode ? "Demo session" : (appState.user.email_verified ? "Yes" : "No")),
     resultItem("Created", shortDate(appState.user.created_at)),
   ].join("");
+  $("#request-verification").hidden = appState.demoMode;
+  $("#verification-confirm-form").hidden = appState.demoMode;
   renderThemeControl();
 }
 
@@ -1940,19 +3316,34 @@ function fillPortfolioForms() {
   if (!portfolio) return;
   const settingsForm = $("#settings-form");
   settingsForm.elements.risk_free_rate.value = portfolio.settings.risk_free_rate ?? "";
-  settingsForm.elements.benchmark_symbols.value = (portfolio.settings.benchmark_symbols || []).join(", ");
+  settingsForm.elements.benchmark_symbols.value = selectedBenchmarks(portfolio).join(", ");
   settingsForm.elements.cash_target_pct.value = portfolio.settings.cash_target_pct ?? "";
+  const riskToleranceForm = $("#risk-tolerance-form");
+  const riskScore = portfolio.settings.risk_tolerance_score ?? 5;
+  riskToleranceForm.elements.risk_tolerance_score.value = riskScore;
+  riskToleranceForm.elements.bond_symbols.value = (portfolio.settings.bond_watchlist || []).join(", ");
+  $("#bond-risk-score").value = riskScore;
   const optRf = $("#optimization-form").elements.risk_free_rate;
   if (!optRf.value) optRf.value = portfolio.settings.risk_free_rate ?? 0.02;
   const riskTickers = $("#risk-form").elements.tickers;
   if (!riskTickers.value) riskTickers.value = portfolio.positions.map((item) => item.ticker).join(", ");
+  const strategyForm = $("#strategy-lab-form");
+  const strategyTickers = strategyForm?.elements.tickers;
+  if (strategyTickers && !strategyTickers.value) strategyTickers.value = portfolio.positions.map((item) => item.ticker).join(", ");
+  const strategyOptionSymbol = strategyForm?.elements.options_symbol;
+  if (strategyOptionSymbol && !strategyOptionSymbol.value) {
+    strategyOptionSymbol.value = appState.relativisticBs?.symbol || portfolio.positions[0]?.ticker || "";
+  }
 }
 
 function activateTab(tabId) {
   $$(".tab").forEach((button) => button.classList.toggle("active", button.dataset.tab === tabId));
   $$(".page").forEach((page) => page.classList.toggle("active", page.id === tabId));
   if (tabId === "dashboard" && appState.portfolio) renderDashboard();
+  if (tabId === "risk") renderRiskTolerance();
+  if (tabId === "bonds") loadBondAssets({ autoRefresh: true });
   if (tabId === "relativistic-bs") renderRelativisticBS();
+  if (tabId === "strategy-lab") renderStrategyLab();
   if (tabId === "heatmap" && !appState.heatmap) renderHeatmap();
   if (tabId === "simulate") renderSimulation();
 }
@@ -2093,8 +3484,15 @@ function buildPerformanceSeries(portfolio) {
   const range = performanceWindow(appState.performanceRange);
   const history = activePerformanceHistory();
   const historicalAccount = accountHistoricalPerformancePoints(portfolio, range, history);
-  const accountPoints = historicalAccount?.length ? historicalAccount : accountPerformancePoints(portfolio, range);
-  const alignedStart = accountPoints[0]?.date || range.start;
+  const hasServerCoverage = Boolean(history?.coverage);
+  const mayUseLocalFallback = range.name === "day" || !hasServerCoverage;
+  const accountPoints = historicalAccount?.length
+    ? historicalAccount
+    : mayUseLocalFallback
+      ? accountPerformancePoints(portfolio, range)
+      : [];
+  const coverageStart = history?.coverage?.effective_start ? new Date(history.coverage.effective_start) : null;
+  const alignedStart = accountPoints[0]?.date || (Number.isFinite(coverageStart?.getTime()) ? coverageStart : range.start);
   const alignedRange = { ...range, start: alignedStart > range.start ? alignedStart : range.start };
   const series = [{ label: "Portfolio", color: SERIES_COLORS[0], points: accountPoints }];
   selectedBenchmarks(portfolio).forEach((symbol, index) => {
@@ -2105,6 +3503,544 @@ function buildPerformanceSeries(portfolio) {
     });
   });
   return series;
+}
+
+function strategyLabDefaultTickers(universe) {
+  const portfolio = appState.portfolio;
+  if (!portfolio) return [];
+  if (universe === "options_symbol") {
+    const symbol = String(appState.relativisticBs?.symbol || $("#relativistic-bs-symbol")?.value || "").trim().toUpperCase();
+    return symbol ? [symbol] : (portfolio.positions || []).slice(0, 1).map((position) => position.ticker);
+  }
+  if (universe === "benchmarks") return selectedBenchmarks(portfolio);
+  if (universe === "custom") return splitSymbols($("#strategy-lab-tickers")?.value || "");
+  return (portfolio.positions || []).map((position) => position.ticker);
+}
+
+function strategyLabRequestedTickers(data) {
+  const explicit = splitSymbols(data.tickers || "");
+  return explicit.length ? explicit : strategyLabDefaultTickers(data.universe || "portfolio");
+}
+
+function strategyLabOptionSymbol(data, tickers) {
+  const explicit = String(data.options_symbol || "").trim().toUpperCase();
+  if (explicit) return explicit;
+  const suiteSymbol = String(appState.relativisticBs?.symbol || $("#relativistic-bs-symbol")?.value || "").trim().toUpperCase();
+  if (suiteSymbol) return suiteSymbol;
+  return tickers[0] || "";
+}
+
+function strategyLabOverlayProfile(data, tickers) {
+  const overlayType = data.options_overlay || "none";
+  if (overlayType === "none") {
+    return {
+      active: false,
+      type: "none",
+      symbol: "",
+      summaryLabel: "None",
+      note: "No option overlay is applied.",
+    };
+  }
+
+  const symbol = strategyLabOptionSymbol(data, tickers);
+  const linkedIndex = tickers.indexOf(symbol);
+  if (linkedIndex < 0) {
+    return {
+      active: false,
+      type: overlayType,
+      symbol,
+      summaryLabel: "Not linked",
+      error: `${symbol || "The option overlay symbol"} must be one of the selected strategy tickers.`,
+    };
+  }
+
+  const side = overlayType === "covered_call" ? "call" : "put";
+  const payload = appState.relativisticBs?.symbol === symbol ? appState.relativisticBs : null;
+  const chain = payload?.option_chain || [];
+  const liveSpot = finiteNumber(payload?.spot, currentPortfolioPrice(appState.portfolio, symbol));
+  const fallbackVol = Math.max(0.08, finiteNumber(riskVolOverride(symbol), ASSET_MODEL[(appState.portfolio?.positions || []).find((position) => position.ticker === symbol)?.asset_class]?.vol || ASSET_MODEL.equity.vol));
+  const rate = finiteNumber(payload?.parameters?.rate, finiteNumber(appState.portfolio?.settings?.risk_free_rate, 0.02));
+  const fallbackTauYears = 30 / 365.25;
+
+  if (Number.isFinite(liveSpot) && liveSpot > 0 && chain.length) {
+    const chosen = strategyLabChainOverlayContract(chain, liveSpot, side);
+    if (chosen) {
+      const contract = chosen[side];
+      const rawPremium = relbsNumericMarketPrice(contract);
+      const strike = finiteNumber(chosen.strike, liveSpot);
+      const sigma = Math.max(0.05, finiteNumber(contract.market_iv, finiteNumber(payload?.parameters?.sigma, fallbackVol)));
+      const tauYears = Math.max(7 / 365.25, finiteNumber(payload?.parameters?.tau, fallbackTauYears));
+      const modelPrice = strategyLabBlackScholesPrice(liveSpot, strike, rate, sigma, tauYears, side);
+      const premium = Math.max(0.01, finiteNumber(rawPremium, modelPrice));
+      const scale = modelPrice > 0 ? clamp(premium / modelPrice, 0.65, 1.6) : 1;
+      const strikeRatio = strike / liveSpot;
+      return {
+        active: true,
+        type: overlayType,
+        symbol,
+        linkedIndex,
+        side,
+        strikeRatio,
+        strikeAtLoad: strike,
+        loadedSpot: liveSpot,
+        sigma,
+        rate,
+        tauYears,
+        termDays: Math.max(7, Math.round(tauYears * 365.25)),
+        premiumAtLoad: premium,
+        scale,
+        source: `Loaded ${relbsChainSource(payload?.chain_source)}`,
+        summaryLabel: `${strategyLabOverlayLabel(overlayType)} on ${symbol}`,
+        detailLabel: strategyLabOverlayDetailLabel(overlayType, strikeRatio),
+        note: `${strategyLabOverlayLabel(overlayType)} uses the loaded Options Suite chain for ${symbol}, reprices the short option each observation, and rolls after roughly ${Math.max(7, Math.round(tauYears * 365.25))} days.`,
+      };
+    }
+  }
+
+  const modelSpot = Number.isFinite(liveSpot) && liveSpot > 0 ? liveSpot : 100;
+  const strikeRatio = overlayType === "covered_call" ? 1.05 : 0.95;
+  const strike = modelSpot * strikeRatio;
+  const sigma = fallbackVol;
+  const tauYears = fallbackTauYears;
+  const premium = strategyLabBlackScholesPrice(modelSpot, strike, rate, sigma, tauYears, side);
+  return {
+    active: true,
+    type: overlayType,
+    symbol,
+    linkedIndex,
+    side,
+    strikeRatio,
+    strikeAtLoad: strike,
+    loadedSpot: modelSpot,
+    sigma,
+    rate,
+    tauYears,
+    termDays: Math.max(7, Math.round(tauYears * 365.25)),
+    premiumAtLoad: premium,
+    scale: 1,
+    source: "Model fallback",
+    summaryLabel: `${strategyLabOverlayLabel(overlayType)} on ${symbol}`,
+    detailLabel: strategyLabOverlayDetailLabel(overlayType, strikeRatio),
+    note: `${strategyLabOverlayLabel(overlayType)} uses a modeled 30-day contract for ${symbol} because no matching Options Suite chain is loaded.`,
+  };
+}
+
+function strategyLabChainOverlayContract(chain, spot, side) {
+  if (!Array.isArray(chain) || !chain.length || !Number.isFinite(spot) || spot <= 0) return null;
+  const sideRows = chain
+    .map((row) => ({ row, price: relbsNumericMarketPrice(row?.[side]) }))
+    .filter((item) => Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.row?.strike));
+  if (!sideRows.length) return null;
+  const preferred = sideRows
+    .filter((item) => side === "call" ? item.row.strike >= spot : item.row.strike <= spot)
+    .sort((left, right) => Math.abs(left.row.strike - spot) - Math.abs(right.row.strike - spot));
+  return (preferred[0] || sideRows.sort((left, right) => Math.abs(left.row.strike - spot) - Math.abs(right.row.strike - spot))[0])?.row || null;
+}
+
+function strategyLabBlackScholesPrice(spot, strike, rate, sigma, tau, optionType) {
+  const safeSpot = Math.max(finiteNumber(spot, 0), 0.0001);
+  const safeStrike = Math.max(finiteNumber(strike, 0), 0.0001);
+  const safeTau = Math.max(finiteNumber(tau, 0), 1 / 365.25);
+  const safeSigma = Math.max(finiteNumber(sigma, 0), 0.01);
+  const sqrtTau = Math.sqrt(safeTau);
+  const d1 = (Math.log(safeSpot / safeStrike) + (rate + (safeSigma * safeSigma) / 2) * safeTau) / (safeSigma * sqrtTau);
+  const d2 = d1 - safeSigma * sqrtTau;
+  if (optionType === "put") {
+    return (safeStrike * Math.exp(-rate * safeTau) * strategyLabNormalCdf(-d2)) - (safeSpot * strategyLabNormalCdf(-d1));
+  }
+  return (safeSpot * strategyLabNormalCdf(d1)) - (safeStrike * Math.exp(-rate * safeTau) * strategyLabNormalCdf(d2));
+}
+
+function strategyLabNormalCdf(value) {
+  return 0.5 * (1 + strategyLabErf(value / Math.sqrt(2)));
+}
+
+function strategyLabErf(value) {
+  const sign = value >= 0 ? 1 : -1;
+  const x = Math.abs(value);
+  const a1 = 0.254829592;
+  const a2 = -0.284496736;
+  const a3 = 1.421413741;
+  const a4 = -1.453152027;
+  const a5 = 1.061405429;
+  const p = 0.3275911;
+  const t = 1 / (1 + (p * x));
+  const y = 1 - (((((a5 * t) + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return sign * y;
+}
+
+function strategyLabOverlayPremium(overlay, basePrice) {
+  const strike = basePrice * overlay.strikeRatio;
+  return Math.max(0, strategyLabBlackScholesPrice(basePrice, strike, overlay.rate, overlay.sigma, overlay.tauYears, overlay.side) * overlay.scale);
+}
+
+function strategyLabOverlayOptionValue(overlay, basePrice, currentPrice, elapsedDays) {
+  const strike = basePrice * overlay.strikeRatio;
+  const intrinsic = overlay.side === "call"
+    ? Math.max(currentPrice - strike, 0)
+    : Math.max(strike - currentPrice, 0);
+  const remainingTau = Math.max(0, overlay.tauYears - (Math.max(0, elapsedDays) / 365.25));
+  if (remainingTau <= 0) return intrinsic;
+  const theoretical = strategyLabBlackScholesPrice(currentPrice, strike, overlay.rate, overlay.sigma, remainingTau, overlay.side) * overlay.scale;
+  return Math.max(intrinsic, theoretical);
+}
+
+function strategyLabOverlayMultiplier(overlay, basePrice, currentPrice, elapsedDays) {
+  if (!overlay?.active || basePrice <= 0) return currentPrice / Math.max(basePrice, 0.0001);
+  const premium = strategyLabOverlayPremium(overlay, basePrice);
+  const optionValue = strategyLabOverlayOptionValue(overlay, basePrice, currentPrice, elapsedDays);
+  if (overlay.type === "covered_put") {
+    return Math.max(0, (basePrice + premium - optionValue) / basePrice);
+  }
+  return Math.max(0, (currentPrice + premium - optionValue) / basePrice);
+}
+
+function strategyLabShouldRollOverlay(overlay, segmentStartDate, currentDate) {
+  if (!overlay?.active || !segmentStartDate || !currentDate) return false;
+  return (currentDate.getTime() - segmentStartDate.getTime()) >= overlay.termDays * 24 * 60 * 60 * 1000;
+}
+
+function buildStrategyLabResult(data, options) {
+  const tickers = options.tickers;
+  const rangeName = options.rangeName || "year";
+  const range = performanceWindow(rangeName);
+  const history = options.history;
+  const capital = Math.max(1, numberValue(data.capital || 10000));
+  const requestedMaxWeight = Math.max(0.05, Math.min(1, numberValue(data.max_weight || 0.35)));
+  const maxWeight = Math.max(requestedMaxWeight, 1 / Math.max(tickers.length, 1));
+  const priceData = strategyLabPriceData(tickers, history, range);
+  const overlay = strategyLabOverlayProfile(data, tickers);
+  if (overlay.error) throw new Error(overlay.error);
+  const points = priceData.rows.length >= 2
+    ? simulateStrategyLab(data, tickers, priceData.rows, capital, maxWeight, overlay)
+    : [];
+  const optionsContext = overlay.summaryLabel;
+  const notes = strategyLabNotes(data, {
+    tickers,
+    rangeName,
+    history,
+    priceData,
+    optionsContext,
+    overlay,
+    maxWeight,
+    requestedMaxWeight,
+  });
+  const metrics = strategyLabMetrics(points, capital);
+  const series = strategyLabSeries(points, range, history);
+  return {
+    tickers,
+    rangeName,
+    strategyType: data.strategy_type || "buy_hold",
+    overlay,
+    optionsContext,
+    points,
+    series,
+    metrics,
+    notes,
+  };
+}
+
+function strategyLabPriceData(tickers, history, range) {
+  const byTicker = performanceHistoryByTicker(history);
+  const seriesByTicker = new Map();
+  const missing = [];
+  tickers.forEach((ticker) => {
+    const direct = (byTicker.get(ticker) || [])
+      .filter((point) => point.date >= range.start && point.date <= range.end && Number.isFinite(point.close) && point.close > 0)
+      .map((point) => ({ date: point.date, close: point.close }));
+    if (direct.length >= 2) {
+      seriesByTicker.set(ticker, direct);
+      return;
+    }
+    if (INDEX_ANNUAL_RETURNS[ticker]) {
+      const fallback = benchmarkPoints(ticker, range, history)
+        .map((point) => ({ date: point.date, close: point.value }))
+        .filter((point) => Number.isFinite(point.close) && point.close > 0);
+      if (fallback.length >= 2) {
+        seriesByTicker.set(ticker, fallback);
+        return;
+      }
+    }
+    missing.push(ticker);
+  });
+  if (missing.length) return { rows: [], missing };
+
+  const times = Array.from(new Set(Array.from(seriesByTicker.values()).flatMap((points) => points.map((point) => point.date.getTime()))))
+    .filter((time) => time >= range.start.getTime() && time <= range.end.getTime())
+    .sort((left, right) => left - right);
+  const rows = times.map((time) => {
+    const prices = tickers.map((ticker) => strategyLabPriceAt(seriesByTicker.get(ticker), time));
+    return { date: new Date(time), prices };
+  }).filter((row) => row.prices.every((price) => Number.isFinite(price) && price > 0));
+  return { rows, missing };
+}
+
+function strategyLabPriceAt(points, time) {
+  if (!points?.length || time < points[0].date.getTime()) return null;
+  let low = 0;
+  let high = points.length - 1;
+  let best = null;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const pointTime = points[middle].date.getTime();
+    if (pointTime <= time) {
+      best = points[middle];
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best?.close ?? null;
+}
+
+function simulateStrategyLab(data, tickers, rows, capital, maxWeight, overlay) {
+  const strategyType = data.strategy_type || "buy_hold";
+  const rebalance = strategyType === "buy_hold" ? "none" : (data.rebalance || "monthly");
+  let segmentCapital = capital;
+  let bases = rows[0].prices.slice();
+  let segmentStartDate = rows[0].date;
+  let weights = strategyType === "buy_hold"
+    ? strategyLabInitialWeights(data.universe, tickers, maxWeight)
+    : strategyLabEqualWeights(tickers.length, maxWeight);
+  const points = [];
+
+  rows.forEach((row, index) => {
+    const rebalanceDue = index > 0 && shouldStrategyLabRebalance(rows[index - 1].date, row.date, rebalance);
+    const overlayRollDue = index > 0 && strategyLabShouldRollOverlay(overlay, segmentStartDate, row.date);
+    if (rebalanceDue || overlayRollDue) {
+      segmentCapital = strategyLabSegmentValue(segmentCapital, weights, bases, row.prices, overlay, segmentStartDate, row.date);
+      weights = strategyType === "momentum_tilt"
+        ? strategyLabMomentumWeights(rows, index, maxWeight)
+        : rebalanceDue
+          ? strategyLabEqualWeights(tickers.length, maxWeight)
+          : weights;
+      bases = row.prices.slice();
+      segmentStartDate = row.date;
+    }
+    const value = strategyLabSegmentValue(segmentCapital, weights, bases, row.prices, overlay, segmentStartDate, row.date);
+    points.push({ date: row.date, value: (value / capital) * 100 });
+  });
+  return normalizePointsToWindow(points, { ...performanceWindow(data.strategy_range || "year"), start: rows[0].date });
+}
+
+function strategyLabSegmentValue(segmentCapital, weights, bases, prices, overlay, segmentStartDate, currentDate) {
+  const elapsedDays = segmentStartDate && currentDate ? Math.max(0, (currentDate.getTime() - segmentStartDate.getTime()) / (24 * 60 * 60 * 1000)) : 0;
+  const growth = weights.reduce((sum, weight, index) => {
+    const base = bases[index] || prices[index] || 1;
+    const currentPrice = prices[index];
+    const multiplier = overlay?.active && overlay.linkedIndex === index
+      ? strategyLabOverlayMultiplier(overlay, base, currentPrice, elapsedDays)
+      : currentPrice / base;
+    return sum + weight * multiplier;
+  }, 0);
+  return segmentCapital * growth;
+}
+
+function strategyLabInitialWeights(universe, tickers, maxWeight) {
+  if (universe === "portfolio") {
+    const positions = appState.portfolio?.positions || [];
+    const scores = tickers.map((ticker) => finiteNumber(positions.find((position) => position.ticker === ticker)?.market_value, 0));
+    if (scores.some((score) => score > 0)) return strategyLabWeightsFromScores(scores, maxWeight);
+  }
+  return strategyLabEqualWeights(tickers.length, maxWeight);
+}
+
+function strategyLabEqualWeights(count, maxWeight) {
+  return strategyLabWeightsFromScores(Array.from({ length: count }, () => 1), maxWeight);
+}
+
+function strategyLabMomentumWeights(rows, index, maxWeight) {
+  const lookback = Math.max(0, index - 20);
+  const current = rows[index].prices;
+  const previous = rows[lookback].prices;
+  const scores = current.map((price, column) => Math.max(0, price / previous[column] - 1));
+  return strategyLabWeightsFromScores(scores.some((score) => score > 0) ? scores : current.map(() => 1), maxWeight);
+}
+
+function strategyLabWeightsFromScores(scores, maxWeight) {
+  const count = scores.length;
+  if (!count) return [];
+  const cap = Math.max(1 / count, Math.min(1, maxWeight));
+  const cleanScores = scores.map((score) => Math.max(0, finiteNumber(score, 0)));
+  const active = new Set(cleanScores.map((_, index) => index));
+  const weights = Array(count).fill(0);
+  let remaining = 1;
+
+  for (let guard = 0; guard < count && active.size; guard += 1) {
+    const activeScores = Array.from(active).map((index) => cleanScores[index]);
+    const rawScoreSum = activeScores.reduce((sum, value) => sum + value, 0);
+    const useEqual = rawScoreSum <= 0;
+    const scoreSum = useEqual ? active.size : rawScoreSum;
+    let cappedAny = false;
+    active.forEach((index) => {
+      const score = useEqual ? 1 : cleanScores[index];
+      const proposed = remaining * score / scoreSum;
+      if (proposed > cap) {
+        weights[index] = cap;
+        remaining -= cap;
+        active.delete(index);
+        cappedAny = true;
+      }
+    });
+    if (!cappedAny) {
+      active.forEach((index) => {
+        const score = useEqual ? 1 : cleanScores[index];
+        weights[index] = remaining * score / scoreSum;
+      });
+      active.clear();
+    }
+  }
+
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  return total > 0 ? weights.map((weight) => weight / total) : Array.from({ length: count }, () => 1 / count);
+}
+
+function shouldStrategyLabRebalance(previousDate, currentDate, cadence) {
+  if (cadence === "none") return false;
+  if (cadence === "quarterly") {
+    const previousQuarter = previousDate.getUTCFullYear() * 4 + Math.floor(previousDate.getUTCMonth() / 3);
+    const currentQuarter = currentDate.getUTCFullYear() * 4 + Math.floor(currentDate.getUTCMonth() / 3);
+    return currentQuarter !== previousQuarter;
+  }
+  return previousDate.getUTCFullYear() !== currentDate.getUTCFullYear() || previousDate.getUTCMonth() !== currentDate.getUTCMonth();
+}
+
+function strategyLabSeries(points, range, history) {
+  const series = [];
+  if (points.length >= 2) {
+    series.push({ label: "Strategy", color: SERIES_COLORS[0], points });
+  }
+  const alignedRange = points[0] ? { ...range, start: points[0].date } : range;
+  const portfolioPoints = appState.portfolio
+    ? (accountHistoricalPerformancePoints(appState.portfolio, alignedRange, history) || accountPerformancePoints(appState.portfolio, alignedRange))
+    : [];
+  if (portfolioPoints?.length >= 2) {
+    series.push({ label: "Portfolio", color: SERIES_COLORS[1], points: portfolioPoints });
+  }
+  selectedBenchmarks(appState.portfolio).slice(0, 2).forEach((symbol, index) => {
+    const benchmark = benchmarkPoints(symbol, alignedRange, history);
+    if (benchmark.length >= 2) {
+      series.push({ label: benchmarkLabel(symbol), color: SERIES_COLORS[index + 2], points: benchmark });
+    }
+  });
+  return series;
+}
+
+function strategyLabMetrics(points, capital) {
+  if (points.length < 2) {
+    return { returnPct: null, annualizedVolatility: 0, maxDrawdownPct: null, latestValue: capital, observations: 0 };
+  }
+  const latest = latestPoint(points);
+  return {
+    returnPct: lineReturnPct({ points }),
+    annualizedVolatility: strategyLabAnnualizedVolatility(points),
+    maxDrawdownPct: strategyLabMaxDrawdownPct(points),
+    latestValue: latest ? capital * (latest.value / 100) : capital,
+    observations: points.length,
+  };
+}
+
+function strategyLabAnnualizedVolatility(points) {
+  const sorted = validChartPoints(points).sort((left, right) => left.date - right.date);
+  const returns = [];
+  const gaps = [];
+  for (let index = 1; index < sorted.length; index += 1) {
+    const previous = sorted[index - 1];
+    const current = sorted[index];
+    if (previous.value > 0) returns.push(current.value / previous.value - 1);
+    gaps.push(current.date.getTime() - previous.date.getTime());
+  }
+  if (returns.length < 2) return 0;
+  const medianGap = gaps.sort((left, right) => left - right)[Math.floor(gaps.length / 2)] || 24 * 60 * 60 * 1000;
+  const periodsPerYear = Math.max(1, Math.min(252, (365 * 24 * 60 * 60 * 1000) / medianGap));
+  return sampleStdDev(returns) * Math.sqrt(periodsPerYear);
+}
+
+function strategyLabMaxDrawdownPct(points) {
+  let peak = -Infinity;
+  let drawdown = 0;
+  validChartPoints(points).forEach((point) => {
+    peak = Math.max(peak, point.value);
+    if (peak > 0) drawdown = Math.min(drawdown, (point.value / peak - 1) * 100);
+  });
+  return drawdown;
+}
+
+function strategyLabNotes(data, context) {
+  const notes = [];
+  if (context.priceData.missing.length) {
+    notes.push({
+      title: "Missing history",
+      body: `Cached history is not ready for ${context.priceData.missing.join(", ")}. Refresh market history from the dashboard or wait for the background job, then run again.`,
+    });
+  } else if (context.priceData.rows.length < 2) {
+    notes.push({
+      title: "Insufficient points",
+      body: "The selected range does not have enough cached price points for the chosen symbols.",
+    });
+  } else {
+    notes.push({
+      title: "Data coverage",
+      body: `Scenario uses ${context.priceData.rows.length} aligned cached observations over ${PERFORMANCE_RANGES[context.rangeName]?.label || context.rangeName}.`,
+    });
+  }
+  if (context.requestedMaxWeight < context.maxWeight) {
+    notes.push({
+      title: "Weight cap adjusted",
+      body: `The requested cap was below the feasible equal weight for ${context.tickers.length} symbols, so the lab used ${pct(context.maxWeight)}.`,
+    });
+  }
+  notes.push({
+    title: "Strategy logic",
+    body: strategyLabStrategyDescription(data.strategy_type || "buy_hold"),
+  });
+  if (context.overlay?.active) {
+    notes.push({
+      title: "Options overlay",
+      body: `${context.overlay.summaryLabel}. ${context.overlay.note} Source: ${context.overlay.source}.`,
+    });
+  } else if (data.options_overlay && data.options_overlay !== "none") {
+    notes.push({
+      title: "Options overlay",
+      body: "No option overlay could be linked to the selected universe.",
+    });
+  }
+  if (data.notes) {
+    notes.push({ title: "Thesis", body: data.notes });
+  }
+  notes.push({
+    title: "Isolation guard",
+    body: "Runs in this lab do not alter portfolios, trades, lots, cash ledger, saved options snapshots, or optimization state.",
+  });
+  if (context.history?.coverage?.note) notes.push({ title: "Portfolio coverage", body: context.history.coverage.note });
+  return notes;
+}
+
+function strategyLabStrategyLabel(value) {
+  if (value === "equal_rebalance") return "Equal-weight rebalance";
+  if (value === "momentum_tilt") return "Simple momentum tilt";
+  return "Buy and hold";
+}
+
+function strategyLabStrategyDescription(value) {
+  if (value === "equal_rebalance") {
+    return "Equal-weight rebalance starts from an even split and resets back to equal weights on the selected cadence, which trims relative winners and adds to laggards.";
+  }
+  if (value === "momentum_tilt") {
+    return "Momentum tilt reviews the latest twenty aligned observations at each rebalance date and pushes more weight toward the strongest recent performers, while the max-position cap prevents one name from taking over the whole test.";
+  }
+  return "Buy and hold uses the opening allocation once and then lets weights drift naturally with market performance, without scheduled resets.";
+}
+
+function strategyLabOverlayLabel(value) {
+  if (value === "covered_call") return "Covered call";
+  if (value === "covered_put") return "Covered put (cash-secured)";
+  return "No overlay";
+}
+
+function strategyLabOverlayDetailLabel(type, strikeRatio) {
+  if (type === "covered_put") return `${pct(1 - strikeRatio)} below spot strike`;
+  return `${pct(strikeRatio - 1)} above spot strike`;
 }
 
 function selectedBenchmarks(portfolio) {
@@ -2245,13 +4181,23 @@ function buildRiskPriceRowsFromHistory(tickers, history, rangeName) {
   if (missing.length) throw new Error(`Market history is not ready for ${missing.join(", ")}.`);
 
   const range = performanceWindow(rangeName || "year");
-  const times = Array.from(new Set(tickers.flatMap((ticker) => (
-    byTicker.get(ticker).filter((point) => point.date >= range.start && point.date <= range.end).map((point) => point.date.getTime())
-  )))).sort((a, b) => a - b);
-
-  const rows = times.map((time) => tickers.map((ticker) => historicalPriceAt(byTicker.get(ticker), time)))
+  const closeByTicker = new Map(tickers.map((ticker) => [
+    ticker,
+    dailyCloseByDate((byTicker.get(ticker) || []).filter((point) => point.date >= range.start && point.date <= range.end)),
+  ]));
+  const firstTickerDates = Array.from(closeByTicker.get(tickers[0])?.keys() || []);
+  const sharedDates = firstTickerDates.filter((dateKey) => tickers.every((ticker) => closeByTicker.get(ticker)?.has(dateKey))).sort();
+  const rows = sharedDates.map((dateKey) => tickers.map((ticker) => closeByTicker.get(ticker).get(dateKey)))
     .filter((row) => row.every((value) => Number.isFinite(value) && value > 0));
   return thinRows(rows, 750);
+}
+
+function dailyCloseByDate(points) {
+  const closes = new Map();
+  points.forEach((point) => {
+    if (Number.isFinite(point.close)) closes.set(point.date.toISOString().slice(0, 10), point.close);
+  });
+  return closes;
 }
 
 function thinRows(rows, maxRows) {
@@ -2292,6 +4238,43 @@ function riskSummary(risk) {
     averageCorrelation,
     strongestPairLabel: strongest.label,
   };
+}
+
+function riskCorrelationThreshold() {
+  return Math.max(0, Math.min(0.9, finiteNumber($("#risk-correlation-threshold")?.value, 0.2)));
+}
+
+function minimumPairwiseObservations(matrix) {
+  const values = matrix?.values || [];
+  if (!values.length) return 0;
+  const offDiagonal = [];
+  values.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    if (rowIndex !== columnIndex) offDiagonal.push(Math.max(0, Math.round(finiteNumber(value, 0))));
+  }));
+  if (offDiagonal.length) return Math.min(...offDiagonal);
+  return Math.max(0, Math.round(finiteNumber(values[0]?.[0], 0)));
+}
+
+function correlationInsightsHtml(matrix, threshold) {
+  if (!matrix?.values?.length) return `<div class="activity-item"><strong>No pair scan</strong><span>Correlation pairs will appear after risk analysis.</span></div>`;
+  const pairs = [];
+  matrix.values.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    if (columnIndex <= rowIndex) return;
+    const correlation = finiteNumber(value, 0);
+    if (Math.abs(correlation) < threshold) return;
+    pairs.push({
+      left: matrix.tickers[rowIndex],
+      right: matrix.tickers[columnIndex],
+      value: correlation,
+    });
+  }));
+  pairs.sort((left, right) => Math.abs(right.value) - Math.abs(left.value));
+  if (!pairs.length) return `<div class="activity-item"><strong>No pairs above ${threshold.toFixed(2)}</strong><span>Lower the temperature threshold to reveal weaker relationships.</span></div>`;
+  return pairs.slice(0, 10).map((pair) => `
+    <div class="correlation-pair">
+      <strong>${escapeHtml(pair.left)} / ${escapeHtml(pair.right)}</strong>
+      <span class="${pair.value >= 0 ? "positive" : "negative"}">${pair.value >= 0 ? "+" : ""}${pair.value.toFixed(2)}</span>
+    </div>`).join("");
 }
 
 
@@ -2433,21 +4416,28 @@ function renderPerformanceOverview(series) {
     .filter((item) => Number.isFinite(item.value))
     .sort((a, b) => b.value - a.value)[0];
   const history = activePerformanceHistory();
-  const coverageStart = history?.coverage?.effective_start ? shortDate(history.coverage.effective_start) : "--";
+  const demoStart = appState.demoMode
+    ? shortDate((appState.portfolio?.lots || []).reduce((earliest, lot) => (
+      !earliest || new Date(lot.purchased_at) < new Date(earliest) ? lot.purchased_at : earliest
+    ), null))
+    : "--";
+  const coverageStart = history?.coverage?.effective_start ? shortDate(history.coverage.effective_start) : demoStart;
   const label = PERFORMANCE_RANGES[appState.performanceRange]?.label || "Max";
 
   summary.innerHTML = [
-    performanceStat("Portfolio return", formatReturnAxis(accountReturn || 0), returnClass(accountReturn)),
+    performanceStat("Portfolio return", Number.isFinite(accountReturn) ? formatReturnAxis(accountReturn) : "--", returnClass(accountReturn)),
     performanceStat("Coverage start", coverageStart),
     performanceStat("Range", label),
     performanceStat("Best benchmark", bestBenchmark ? `${escapeHtml(bestBenchmark.line.label)} ${formatReturnAxis(bestBenchmark.value)}` : "None", bestBenchmark ? returnClass(bestBenchmark.value) : ""),
   ].join("");
-  $("#performance-coverage-note").textContent = history?.coverage?.note || "Long-range coverage improves as dated lots, trades, cash movements, and cached market prices accumulate.";
+  $("#performance-coverage-note").textContent = appState.demoMode
+    ? "Demo history is preloaded locally from dated trades and benchmark price paths, so visitors can zoom, compare, and place temporary demo trades without touching the backend."
+    : history?.coverage?.note || "Long-range coverage improves as dated lots, trades, cash movements, and cached market prices accumulate.";
 
   legend.innerHTML = series.map((line, index) => {
     const value = lineReturnPct(line);
     const dash = index === 0 ? "" : " dashed";
-    return `<div class="legend-item"><span class="legend-swatch${dash}" style="--series-color:${escapeHtml(line.color)}"></span><span>${escapeHtml(line.label)}</span><strong class="${returnClass(value)}">${formatReturnAxis(value || 0)}</strong></div>`;
+    return `<div class="legend-item"><span class="legend-swatch${dash}" style="--series-color:${escapeHtml(line.color)}"></span><span>${escapeHtml(line.label)}</span><strong class="${returnClass(value)}">${Number.isFinite(value) ? formatReturnAxis(value) : "--"}</strong></div>`;
   }).join("");
 }
 
@@ -2554,6 +4544,84 @@ function drawPerformanceChart(canvas, series) {
   const resolution = effectivePerformanceResolution(appState.performanceRange, maxDate - minDate);
   drawChartAxisLabels(ctx, width, height, padding, appState.performanceRange, performanceResolutionLabel(resolution, Boolean(appState.performanceZoom)));
   drawPerformanceHover(ctx, canvas, displaySeries, { minDate, maxDate, xScale, xUnscale: xAxis.unscale, yScale, padding, plotRight, plotBottom, yMin, yMax, granularity });
+}
+
+function drawStrategyLabChart(canvas, series, rangeName) {
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(480, rect.width) * dpr;
+  canvas.height = Math.max(340, rect.height) * dpr;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const padding = { left: 20, right: 76, top: 30, bottom: 58 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const plotBottom = padding.top + plotHeight;
+  const allPoints = series.flatMap((line) => line.points || [])
+    .filter((point) => point.date instanceof Date && Number.isFinite(point.date.getTime()) && Number.isFinite(normalizedReturnPct(point)));
+  if (!allPoints.length) {
+    const theme = chartTheme();
+    ctx.fillStyle = theme.muted;
+    ctx.font = "13px system-ui";
+    ctx.fillText("Run a strategy scenario to draw a return curve.", padding.left, height / 2);
+    drawChartAxisLabels(ctx, width, height, padding, rangeName || "year", "strategy lab");
+    return;
+  }
+
+  const minDate = Math.min(...allPoints.map((point) => point.date.getTime()));
+  const maxDate = Math.max(...allPoints.map((point) => point.date.getTime()), minDate + 1);
+  const granularity = dateGranularityForSpan(maxDate - minDate);
+  const xScale = (date) => padding.left + ((date.getTime() - minDate) / (maxDate - minDate || 1)) * plotWidth;
+  const displaySeries = series.map((line) => ({
+    ...line,
+    points: strategyLabDisplayPoints(line.points || [], plotWidth),
+  }));
+  const visiblePoints = displaySeries.flatMap((line) => line.points || [])
+    .filter((point) => Number.isFinite(normalizedReturnPct(point)));
+  const rawValues = visiblePoints.map((point) => normalizedReturnPct(point));
+  const yTicks = niceReturnTicks(Math.min(...rawValues), Math.max(...rawValues), 7);
+  const yMin = yTicks[0];
+  const yMax = yTicks[yTicks.length - 1];
+  const yScale = (value) => padding.top + ((yMax - value) / (yMax - yMin || 1)) * plotHeight;
+
+  drawPerformanceGrid(ctx, width, height, padding, yTicks, yScale, minDate, maxDate, xScale, granularity);
+  displaySeries.forEach((line, index) => {
+    const points = validChartPoints(line.points || []).sort((left, right) => left.date - right.date);
+    if (!points.length) return;
+    ctx.strokeStyle = line.color || SERIES_COLORS[index % SERIES_COLORS.length];
+    ctx.lineWidth = index === 0 ? 2.8 : 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.setLineDash(index === 0 ? [] : [5, 5]);
+    ctx.beginPath();
+    points.forEach((point, pointIndex) => {
+      const x = xScale(point.date);
+      const y = yScale(normalizedReturnPct(point));
+      if (pointIndex === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const last = points[points.length - 1];
+    ctx.fillStyle = line.color || SERIES_COLORS[index % SERIES_COLORS.length];
+    ctx.beginPath();
+    ctx.arc(xScale(last.date), yScale(normalizedReturnPct(last)), index === 0 ? 4 : 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  drawChartAxisLabels(ctx, width, height, padding, rangeName || "year", "strategy lab");
+}
+
+function strategyLabDisplayPoints(points, plotWidth) {
+  const sorted = validChartPoints(points).sort((left, right) => left.date - right.date);
+  const maxPoints = Math.max(90, Math.floor(plotWidth * 1.4));
+  if (sorted.length <= maxPoints) return sorted;
+  const stride = Math.ceil(sorted.length / maxPoints);
+  return sorted.filter((_, index) => index % stride === 0 || index === sorted.length - 1);
 }
 
 function bindPerformanceChartEvents(canvas) {
@@ -3056,9 +5124,20 @@ function renderMatrix(container, matrix, options = {}) {
   const cells = [];
   values.forEach((row, r) => {
     cells.push(`<div class="matrix-label">${escapeHtml(matrix.tickers[r])}</div>`);
-    row.forEach((value) => {
+    row.forEach((value, c) => {
+      const meta = {
+        rowIndex: r,
+        columnIndex: c,
+        rowTicker: matrix.tickers[r],
+        columnTicker: matrix.tickers[c],
+        diagonal: r === c,
+      };
       const colorValue = options.normalizeColor ? value / maxAbs : value;
-      cells.push(`<div class="matrix-cell" style="background:${matrixColor(colorValue)}">${escapeHtml(formatter(value))}</div>`);
+      const background = options.color ? options.color(value, meta, maxAbs) : matrixColor(colorValue);
+      const weak = options.hideWeakLabels && !meta.diagonal && Math.abs(value) < finiteNumber(options.threshold, 0);
+      const display = weak ? "" : formatter(value, meta);
+      const title = options.titleFormatter ? options.titleFormatter(value, meta) : `${meta.rowTicker} / ${meta.columnTicker}: ${formatter(value, meta)}`;
+      cells.push(`<div class="matrix-cell${weak ? " weak" : ""}${meta.diagonal ? " diagonal" : ""}" style="background:${escapeHtml(background)}" title="${escapeHtml(title)}">${escapeHtml(display)}</div>`);
     });
   });
   container.innerHTML = header.concat(cells).join("");
@@ -3180,6 +5259,57 @@ function splitSymbols(value) {
   return String(value || "").split(/,|\s+/).map((symbol) => symbol.trim().toUpperCase()).filter(Boolean).filter((symbol, index, list) => list.indexOf(symbol) === index);
 }
 
+function bondMonitoredTickers() {
+  return (appState.bondAssets?.assets || []).filter((asset) => asset.monitored).map((asset) => asset.ticker);
+}
+
+function defaultBondRungs(strategyType) {
+  return riskFitBondRungs(5, strategyType);
+}
+
+function riskFitBondRungs(riskScore, strategyType) {
+  let terms;
+  let weights;
+  if (strategyType === "barbell") {
+    if (riskScore <= 3) [terms, weights] = [[1, 7], [0.70, 0.30]];
+    else if (riskScore <= 6) [terms, weights] = [[1, 10], [0.55, 0.45]];
+    else [terms, weights] = [[2, 20], [0.35, 0.65]];
+  } else {
+    if (riskScore <= 3) terms = [1, 2, 3, 4, 5];
+    else if (riskScore <= 6) terms = [1, 3, 5, 7, 10];
+    else terms = [2, 5, 10, 15, 20];
+    weights = terms.map(() => 1 / terms.length);
+  }
+  return terms.map((years, index) => ({
+    label: `${years}-year rung`,
+    years_to_maturity: years,
+    coupon_rate: 0.04,
+    yield_to_maturity: 0.04,
+    market_price_pct: 100,
+    face_value: 1000,
+    allocation_weight: weights[index],
+    payments_per_year: 2,
+  }));
+}
+
+function bondRungsFromForm() {
+  const rows = $$("#bond-rung-rows tr");
+  if (!rows.length) throw new Error("Add at least one bond rung.");
+  return rows.map((row, index) => {
+    const value = (field) => row.querySelector(`[data-field="${field}"]`)?.value;
+    return {
+      label: value("label") || `Rung ${index + 1}`,
+      allocation_weight: numberValue(value("allocation_weight")) / 100,
+      face_value: 1000,
+      market_price_pct: numberValue(value("market_price_pct")),
+      coupon_rate: numberValue(value("coupon_rate")) / 100,
+      yield_to_maturity: numberValue(value("yield_to_maturity")) / 100,
+      years_to_maturity: numberValue(value("years_to_maturity")),
+      payments_per_year: Math.round(numberValue(value("payments_per_year"))),
+    };
+  });
+}
+
 function numberValue(value) {
   const parsed = Number(value || 0);
   if (!Number.isFinite(parsed)) throw new Error("Numeric input is invalid.");
@@ -3225,6 +5355,16 @@ function matrixColor(value) {
   }
   const light = 42 - Math.abs(bounded) * 12;
   return `hsl(6 66% ${light}%)`;
+}
+
+function correlationTemperatureColor(value, threshold, diagonal = false) {
+  const bounded = Math.max(-1, Math.min(1, finiteNumber(value, 0)));
+  if (diagonal) return appState.theme === "dark" ? "hsl(173 55% 30%)" : "hsl(173 52% 34%)";
+  const magnitude = Math.abs(bounded);
+  if (magnitude < threshold) return appState.theme === "dark" ? "hsl(165 10% 20%)" : "hsl(165 14% 90%)";
+  const intensity = Math.min(1, (magnitude - threshold) / Math.max(1 - threshold, 0.001));
+  const light = appState.theme === "dark" ? 30 + intensity * 12 : 72 - intensity * 40;
+  return bounded >= 0 ? `hsl(173 62% ${light}%)` : `hsl(6 66% ${light}%)`;
 }
 
 function finiteNumber(value, fallback = null) {

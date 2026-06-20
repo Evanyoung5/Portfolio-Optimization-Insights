@@ -1519,6 +1519,8 @@ def _settings_payload(settings: PortfolioSettings) -> dict[str, Any]:
         "risk_free_rate": settings.risk_free_rate,
         "benchmark_symbols": settings.benchmark_symbols,
         "cash_target_pct": settings.cash_target_pct,
+        "risk_tolerance_score": settings.risk_tolerance_score,
+        "bond_watchlist": settings.bond_watchlist,
         "updated_at": settings.updated_at.isoformat(),
     }
 
@@ -1535,6 +1537,8 @@ def _settings_from_row(row: Any) -> PortfolioSettings:
                 if payload.get("cash_target_pct") is not None
                 else None
             ),
+            risk_tolerance_score=int(payload.get("risk_tolerance_score", 5)),
+            bond_watchlist=[str(symbol).strip().upper() for symbol in payload.get("bond_watchlist", [])],
             updated_at=_parse_datetime(payload.get("updated_at") or row[5]),
         )
     benchmarks = [symbol for symbol in str(row[2] or "").split(",") if symbol]
@@ -1543,6 +1547,8 @@ def _settings_from_row(row: Any) -> PortfolioSettings:
         risk_free_rate=_float(row[1]),
         benchmark_symbols=benchmarks,
         cash_target_pct=_float(row[3]) if row[3] is not None else None,
+        risk_tolerance_score=5,
+        bond_watchlist=[],
         updated_at=row[5],
     )
 

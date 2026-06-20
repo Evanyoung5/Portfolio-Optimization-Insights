@@ -16,6 +16,10 @@ import numpy as np
 
 TRADING_DAYS_PER_YEAR = 252.0
 CONTRACT_MULTIPLIER = 100.0
+MIN_MARKET_IV = 0.02
+MAX_MARKET_IV = 3.0
+MIN_SURFACE_MONEYNESS = 0.50
+MAX_SURFACE_MONEYNESS = 1.50
 
 
 def historical_volatility_estimates(
@@ -105,11 +109,13 @@ def build_volatility_smile(
     chain_rows: list[dict[str, Any]],
 ) -> list[dict[str, float | None]]:
     """Return strike-by-strike market IV data for a volatility-smile chart."""
+    if spot <= 0:
+        return []
     rows: list[dict[str, float | None]] = []
     for row in sorted(chain_rows, key=lambda item: float(item["strike"])):
         strike = float(row["strike"])
-        call_iv = _side_float(row, "call", "market_iv")
-        put_iv = _side_float(row, "put", "market_iv")
+        call_iv = _market_iv(_side_float(row, "call", "market_iv"))
+        put_iv = _market_iv(_side_float(row, "put", "market_iv"))
         average_iv = _average_present([call_iv, put_iv])
         if average_iv is None and call_iv is None and put_iv is None:
             continue
@@ -197,6 +203,8 @@ def build_iv_surface_points(
     max_points_per_expiry: int = 35,
 ) -> list[dict[str, float | str | None]]:
     """Return sparse IV-surface points across expiries and strikes."""
+    if spot <= 0:
+        return []
     valuation_date = as_of or datetime.now(timezone.utc).date()
     points: list[dict[str, float | str | None]] = []
     for snapshot in snapshots:
@@ -205,11 +213,12 @@ def build_iv_surface_points(
             continue
         tau = max((expiry - valuation_date).days / 365.25, 1.0 / 365.25)
         rows = _snapshot_chain_rows(snapshot)
+        rows = [row for row in rows if _surface_row_is_usable(row, spot)]
         rows = _thin_surface_rows(rows, spot, max_points_per_expiry)
         for row in rows:
             strike = float(row["strike"])
-            call_iv = _side_float(row, "call", "market_iv")
-            put_iv = _side_float(row, "put", "market_iv")
+            call_iv = _market_iv(_side_float(row, "call", "market_iv"))
+            put_iv = _market_iv(_side_float(row, "put", "market_iv"))
             average_iv = _average_present([call_iv, put_iv])
             if average_iv is None:
                 continue
@@ -249,6 +258,17 @@ def _thin_surface_rows(rows: list[dict[str, Any]], spot: float, limit: int) -> l
     return sorted(ranked, key=lambda item: float(item["strike"]))
 
 
+def _surface_row_is_usable(row: dict[str, Any], spot: float) -> bool:
+    strike = float(row["strike"])
+    moneyness = strike / spot
+    if not MIN_SURFACE_MONEYNESS <= moneyness <= MAX_SURFACE_MONEYNESS:
+        return False
+    return any(
+        _market_iv(_side_float(row, side, "market_iv")) is not None
+        for side in ("call", "put")
+    )
+
+
 def _gamma_exposure(
     spot: float,
     strike: float,
@@ -269,8 +289,8 @@ def _market_ivs(chain_rows: list[dict[str, Any]]) -> list[float]:
     values: list[float] = []
     for row in chain_rows:
         for side in ("call", "put"):
-            value = _side_float(row, side, "market_iv")
-            if value is not None and 0 < value < 5:
+            value = _market_iv(_side_float(row, side, "market_iv"))
+            if value is not None:
                 values.append(value)
     return values
 
@@ -279,15 +299,24 @@ def _atm_market_ivs(chain_rows: list[dict[str, Any]], spot: float) -> list[float
     candidates = [
         row
         for row in chain_rows
-        if _average_present([_side_float(row, "call", "market_iv"), _side_float(row, "put", "market_iv")]) is not None
+        if _average_present(
+            [
+                _market_iv(_side_float(row, "call", "market_iv")),
+                _market_iv(_side_float(row, "put", "market_iv")),
+            ]
+        )
+        is not None
     ]
     if not candidates:
         return []
     atm = min(candidates, key=lambda row: abs(float(row["strike"]) - spot))
     return [
         value
-        for value in (_side_float(atm, "call", "market_iv"), _side_float(atm, "put", "market_iv"))
-        if value is not None and 0 < value < 5
+        for value in (
+            _market_iv(_side_float(atm, "call", "market_iv")),
+            _market_iv(_side_float(atm, "put", "market_iv")),
+        )
+        if value is not None
     ]
 
 
@@ -321,6 +350,12 @@ def _average_present(values: list[float | None]) -> float | None:
 
 
 def _valid_vol(value: float | None, fallback: float) -> float:
-    if value is not None and 0.0001 <= value <= 5.0:
+    if value is not None and MIN_MARKET_IV <= value <= MAX_MARKET_IV:
         return value
     return fallback
+
+
+def _market_iv(value: float | None) -> float | None:
+    if value is None or not MIN_MARKET_IV <= value <= MAX_MARKET_IV:
+        return None
+    return value

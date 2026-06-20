@@ -168,6 +168,8 @@ class PortfolioSettings:
     risk_free_rate: float = 0.02
     benchmark_symbols: list[str] = field(default_factory=list)
     cash_target_pct: float | None = None
+    risk_tolerance_score: int = 5
+    bond_watchlist: list[str] = field(default_factory=list)
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

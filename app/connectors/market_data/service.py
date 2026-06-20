@@ -6,6 +6,7 @@ from typing import Any
 from app.connectors.market_data.base import MarketDataConnector
 from app.connectors.market_data.cache import create_market_data_cache, market_data_cache_ttl_seconds
 from app.connectors.market_data.limiter import acquire_provider_fetch_slot
+from app.connectors.market_data.policy import max_refresh_tickers, provider_cost_for_tickers, validate_ticker_budget
 from app.connectors.market_data.yfinance import YFinanceMarketDataConnector
 from app.db.models import MarketQuote, Portfolio
 from app.db.repository import create_portfolio_repository
@@ -90,6 +91,7 @@ def refresh_market_data_quotes(
     normalized = _normalize_tickers(tickers)
     if not normalized:
         return []
+    validate_ticker_budget(normalized, limit=max_refresh_tickers(), label="market-data refresh")
 
     ttl = market_data_cache_ttl_seconds()
     cached = cache.get_many(normalized) if not force else []
@@ -104,6 +106,7 @@ def refresh_market_data_quotes(
             limiter=rate_limiter,
             wait=wait_for_rate_limit,
             sleep=sleep,
+            cost=provider_cost_for_tickers(len(missing)),
         )
         fetched = connector.fetch_quotes(missing)
         repository.upsert_market_quotes(fetched)

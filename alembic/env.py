@@ -13,7 +13,10 @@ target_metadata = None
 
 
 def _database_url() -> str:
-    return os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+    raw = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+    if raw.startswith("postgresql://"):
+        return raw.replace("postgresql://", "postgresql+psycopg://", 1)
+    return raw
 
 
 def run_migrations_offline() -> None:

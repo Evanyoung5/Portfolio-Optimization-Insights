@@ -140,3 +140,41 @@ def test_options_suite_builds_baseline_volatility_and_iv_surface():
     assert len(surface) == 4
     assert surface[0]["expiry_date"] == (today + timedelta(days=30)).isoformat()
     assert surface[0]["average_iv"] == pytest.approx((0.31 + 0.34) / 2)
+
+
+def test_options_suite_omits_provider_iv_sentinels_and_far_surface_strikes():
+    today = date.today()
+    rows = [
+        {"strike": 50.0, "call": {"market_iv": 0.00001}, "put": {"market_iv": 4.5}},
+        {"strike": 95.0, "call": {"market_iv": 0.31}, "put": {"market_iv": 0.34}},
+        {"strike": 100.0, "call": {"market_iv": float("inf")}, "put": {"market_iv": 0.29}},
+        {"strike": 105.0, "call": {"market_iv": 0.32}, "put": {"market_iv": 0.30}},
+    ]
+
+    smile = build_volatility_smile(spot=100, baseline_sigma=0.25, chain_rows=rows)
+    surface = build_iv_surface_points(
+        spot=100,
+        snapshots=[
+            {
+                "expiry": today + timedelta(days=30),
+                "calls": [
+                    {"strike": 50, "implied_volatility": 0.00001},
+                    {"strike": 95, "implied_volatility": 0.31},
+                    {"strike": 100, "implied_volatility": float("inf")},
+                    {"strike": 105, "implied_volatility": 0.32},
+                ],
+                "puts": [
+                    {"strike": 50, "implied_volatility": 4.5},
+                    {"strike": 95, "implied_volatility": 0.34},
+                    {"strike": 100, "implied_volatility": 0.29},
+                    {"strike": 105, "implied_volatility": 0.30},
+                ],
+            }
+        ],
+        as_of=today,
+    )
+
+    assert smile[0]["strike"] == 95
+    assert smile[1]["call_iv"] is None
+    assert smile[1]["average_iv"] == pytest.approx(0.29)
+    assert {point["strike"] for point in surface} == {95, 100, 105}

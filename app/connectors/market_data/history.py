@@ -7,6 +7,7 @@ from typing import Any
 
 from app.background.queue import redis_client_from_env
 from app.connectors.market_data.limiter import acquire_provider_fetch_slot
+from app.connectors.market_data.policy import max_history_tickers, provider_cost_for_tickers, validate_ticker_budget
 from app.connectors.market_data.yfinance import PriceHistoryPoint, PriceHistorySeries, YFinanceMarketDataConnector
 
 
@@ -105,6 +106,7 @@ def get_cached_price_history(
     normalized = _normalize_tickers(tickers)
     if not normalized:
         return PriceHistoryBundle(spec.range_name, spec.period, spec.interval, [], [])
+    validate_ticker_budget(normalized, limit=max_history_tickers(), label="market-history refresh")
     cache = cache or create_price_history_cache()
     cached = cache.get_many(normalized, period=spec.period, interval=spec.interval)
     cached_by_ticker = {item.ticker: item for item in cached}
@@ -134,6 +136,7 @@ def refresh_price_history(
     normalized = _normalize_tickers(tickers)
     if not normalized:
         return PriceHistoryBundle(spec.range_name, spec.period, spec.interval, [], [])
+    validate_ticker_budget(normalized, limit=max_history_tickers(), label="market-history refresh")
 
     connector = connector or YFinanceMarketDataConnector()
     cache = cache or create_price_history_cache()
@@ -149,6 +152,7 @@ def refresh_price_history(
             limiter=rate_limiter,
             wait=wait_for_rate_limit,
             sleep=sleep,
+            cost=provider_cost_for_tickers(len(missing)),
         )
         fetched = connector.fetch_price_history(missing, period=spec.period, interval=spec.interval)
         cache.set_many(fetched, ttl_seconds=spec.ttl_seconds)

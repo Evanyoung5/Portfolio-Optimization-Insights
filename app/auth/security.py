@@ -113,8 +113,10 @@ def hash_token(token: str) -> str:
 
 
 def _validate_password(password: str) -> None:
-    if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters long.")
+    if len(password) < 10:
+        raise ValueError("Password must be at least 10 characters long.")
+    if password.lower() == password or password.upper() == password or not any(char.isdigit() for char in password):
+        raise ValueError("Password must include upper-case, lower-case, and numeric characters.")
 
 
 def _secret_key() -> bytes:

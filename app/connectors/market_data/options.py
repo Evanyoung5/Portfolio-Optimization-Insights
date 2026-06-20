@@ -4,11 +4,18 @@ import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
+from math import isfinite
 from typing import Any
 from uuid import uuid4
 
 from app.background.queue import redis_client_from_env
 from app.connectors.market_data.limiter import acquire_provider_fetch_slot
+from app.connectors.market_data.policy import (
+    provider_cost_for_option_chain,
+    provider_cost_for_option_suite,
+    validate_options_history_period,
+    validate_options_surface_expiries,
+)
 from app.connectors.market_data.yfinance import (
     OptionChainSnapshot,
     OptionContract,
@@ -39,6 +46,7 @@ def fetch_option_chain_with_cache(
     acquire_provider_fetch_slot(
         provider=f"{connector.provider}-options",
         provider_signature=provider_signature,
+        cost=provider_cost_for_option_chain(),
     )
     snapshot = connector.fetch_option_chain(normalized, expiry)
     _set_cached_option_chain(snapshot)
@@ -60,6 +68,8 @@ def fetch_option_suite_with_cache(
     normalized = _normalize_ticker(ticker)
     if not normalized:
         return None, False
+    max_expiries = validate_options_surface_expiries(max_expiries)
+    history_period = validate_options_history_period(history_period)
     if not force:
         cached = _get_cached_option_suite(normalized, expiry, max_expiries, history_period)
         if cached is not None:
@@ -69,6 +79,7 @@ def fetch_option_suite_with_cache(
     acquire_provider_fetch_slot(
         provider=f"{connector.provider}-options-suite",
         provider_signature=provider_signature,
+        cost=provider_cost_for_option_suite(max_expiries),
     )
     snapshot = connector.fetch_option_suite(
         normalized,
@@ -305,7 +316,7 @@ def _optional_float(value: Any) -> float | None:
         parsed = float(value)
     except (TypeError, ValueError):
         return None
-    return None if parsed != parsed else parsed
+    return parsed if isfinite(parsed) else None
 
 
 def _cache_key(ticker: str, expiry: date) -> str:

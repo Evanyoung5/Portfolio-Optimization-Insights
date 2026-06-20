@@ -56,6 +56,7 @@ def test_analyze_route_returns_frontend_chart_payload(client, auth_headers):
     assert risk["covariance"]["tickers"] == ["AAPL", "MSFT", "BND"]
     assert len(risk["covariance"]["values"]) == 3
     assert len(risk["correlation"]["heatmap"]) == 9
+    assert risk["pairwise_observations"]["values"] == [[3.0, 3.0, 3.0], [3.0, 3.0, 3.0], [3.0, 3.0, 3.0]]
     assert risk["cleaned_correlation"] is not None
     assert risk["cleaned_covariance"] is not None
     assert risk["observations"] == 3
@@ -232,3 +233,31 @@ def test_relativistic_black_scholes_route_rejects_past_expiry(client, auth_heade
 
     assert response.status_code == 400
     assert "expiry_date" in response.json()["detail"]
+
+
+def test_relativistic_black_scholes_route_rejects_excess_surface_expiries(client, auth_headers, monkeypatch):
+    monkeypatch.setenv("OPTIONS_CHAIN_MAX_SURFACE_EXPIRIES", "2")
+    portfolio = _create_portfolio(client, auth_headers)
+    expiry_date = (date.today() + timedelta(days=365)).isoformat()
+
+    response = client.get(
+        f"/portfolios/{portfolio['id']}/relativistic-bs?symbol=AAPL&expiry_date={expiry_date}&surface_expiries=3",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "surface_expiries is limited to 2" in response.json()["detail"]
+
+
+def test_relativistic_black_scholes_route_rejects_unsupported_history_period(client, auth_headers, monkeypatch):
+    monkeypatch.setenv("OPTIONS_HISTORY_ALLOWED_PERIODS", "1mo,1y")
+    portfolio = _create_portfolio(client, auth_headers)
+    expiry_date = (date.today() + timedelta(days=365)).isoformat()
+
+    response = client.get(
+        f"/portfolios/{portfolio['id']}/relativistic-bs?symbol=AAPL&expiry_date={expiry_date}&history_period=max",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "history_period must be one of" in response.json()["detail"]

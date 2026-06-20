@@ -1,0 +1,5 @@
+Account Number,Account Name,Investment Type,Symbol,Description,Quantity,Last Price,Last Price Change,Current Value,Today's Gain/Loss Dollar,Today's Gain/Loss Percent,Total Gain/Loss Dollar,Total Gain/Loss Percent,Percent Of Account,Cost Basis Total,Average Cost Basis,Type
+Z12345678,Sample Brokerage,Equity,AAPL,APPLE INC,10,$210.25,$1.20,"$2,102.50",$12.00,0.58%,"$602.50",40.17%,65.00%,"$1,500.00",$150.00,Cash
+Z12345678,Sample Brokerage,ETF,BND,VANGUARD TOTAL BOND MARKET ETF,20,$72.50,($0.10),"$1,450.00",($2.00),-0.14%,($50.00),-3.33%,35.00%,"$1,500.00",$75.00,Margin
+Z12345678,Sample Brokerage,Cash,,Pending Activity,,,,,,,,,,,
+"The data and information in this spreadsheet is provided to you solely for your use and is not for distribution.",,,,,,,,,,,,,,,,

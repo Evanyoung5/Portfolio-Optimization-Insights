@@ -5,6 +5,9 @@ services:
     build: .
     ports:
       - "8000:8000"
+    volumes:
+      - ./app:/app/app:ro
+      - ./frontend:/app/frontend:ro
     environment:
       DATABASE_URL: postgresql://portfolio:portfolio@postgres:5432/portfolio
       REDIS_URL: redis://redis:6379/0
@@ -18,6 +21,8 @@ services:
   worker:
     build: .
     command: ["python", "-m", "app.background.worker"]
+    volumes:
+      - ./app:/app/app:ro
     environment:
       DATABASE_URL: postgresql://portfolio:portfolio@postgres:5432/portfolio
       REDIS_URL: redis://redis:6379/0

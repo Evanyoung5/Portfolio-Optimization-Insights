@@ -18,6 +18,7 @@ def test_register_login_and_me_routes(client):
     assert registered["access_token"]
     assert registered["user"]["email"] == "user@example.com"
 
+    client.cookies.clear()
     missing_auth = client.get("/me")
     assert missing_auth.status_code == 401
 
@@ -37,6 +38,16 @@ def test_register_login_and_me_routes(client):
     )
     assert login_response.status_code == 200
     assert login_response.json()["user"] == registered["user"]
+    assert "portfolio_access=" in login_response.headers.get("set-cookie", "")
+
+
+def test_cookie_auth_allows_me_without_bearer_header(client):
+    registered, _ = _register(client, email="cookie@example.com")
+
+    me_response = client.get("/me")
+
+    assert me_response.status_code == 200
+    assert me_response.json()["email"] == registered["user"]["email"]
 
 
 def test_duplicate_registration_is_rejected(client):
@@ -59,6 +70,16 @@ def test_register_rejects_invalid_email(client):
     assert response.status_code == 422
 
 
+def test_register_rejects_weak_password(client):
+    response = client.post(
+        "/auth/register",
+        json={"email": "weak@example.com", "password": "alllowercase12"},
+    )
+
+    assert response.status_code == 400
+    assert "Password" in response.json()["detail"]
+
+
 def test_authenticated_portfolio_is_private_to_owner(client):
     owner, owner_headers = _register(client, email="owner@example.com")
     _, other_headers = _register(client, email="other@example.com")
@@ -78,6 +99,7 @@ def test_authenticated_portfolio_is_private_to_owner(client):
     assert create_response.status_code == 201
     portfolio = create_response.json()
 
+    client.cookies.clear()
     unauthenticated = client.get(f"/portfolios/{portfolio['id']}")
     assert unauthenticated.status_code == 401
 
@@ -138,6 +160,22 @@ def test_refresh_token_rotates_and_logout_revokes(client):
 
     revoked_response = client.post("/auth/refresh", json={"refresh_token": rotated["refresh_token"]})
     assert revoked_response.status_code == 401
+
+
+def test_refresh_and_logout_accept_cookie_tokens(client):
+    registered, _ = _register(client, email="cookie-refresh@example.com")
+
+    refresh_response = client.post("/auth/refresh")
+
+    assert refresh_response.status_code == 200
+    rotated = refresh_response.json()
+    assert rotated["refresh_token"] != registered["refresh_token"]
+
+    logout_response = client.post("/auth/logout")
+    assert logout_response.status_code == 200
+
+    me_response = client.get("/me")
+    assert me_response.status_code == 401
 
 
 def test_password_reset_uses_one_time_token_and_revokes_refresh_tokens(client, monkeypatch):
@@ -207,3 +245,31 @@ def test_email_verification_token_marks_user_verified(client, monkeypatch):
     me_response = client.get("/me", headers=headers)
     assert me_response.status_code == 200
     assert me_response.json()["email_verified"] is True
+
+
+def test_login_rate_limit_returns_429(client, monkeypatch):
+    from app.auth import limiting as auth_limiting
+    from app.connectors.market_data.limiter import InMemoryRateLimiter
+
+    auth_limiting._AUTH_LIMITER = InMemoryRateLimiter()
+    monkeypatch.setenv("AUTH_RATE_LIMIT_LOGIN_IP_LIMIT", "2")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_LOGIN_EMAIL_LIMIT", "2")
+    _register(client, email="ratelimit@example.com")
+
+    first = client.post(
+        "/auth/login",
+        json={"email": "ratelimit@example.com", "password": "wrong-password"},
+    )
+    second = client.post(
+        "/auth/login",
+        json={"email": "ratelimit@example.com", "password": "wrong-password"},
+    )
+    third = client.post(
+        "/auth/login",
+        json={"email": "ratelimit@example.com", "password": "wrong-password"},
+    )
+
+    assert first.status_code == 401
+    assert second.status_code == 401
+    assert third.status_code == 429
+    assert third.headers["retry-after"]

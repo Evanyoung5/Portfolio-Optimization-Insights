@@ -88,6 +88,8 @@ class CSVUploadResponse(BaseModel):
     portfolio_id: str
     imported_positions: int
     total_market_value: float
+    detected_format: Literal["generic", "fidelity", "etrade", "schwab", "coinbase"] = "generic"
+    rows_read: int = 0
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -131,6 +133,194 @@ class OptimizationResponse(BaseModel):
     total_equity: float
     allocations: list[TargetAllocation]
     notes: list[str] = Field(default_factory=list)
+
+
+class RiskToleranceProfileResponse(BaseModel):
+    score: int
+    label: str
+    description: str
+    target_volatility: float
+    target_allocation: dict[str, float]
+    volatility_explanation: str
+
+
+class PortfolioRiskModelResponse(BaseModel):
+    model_volatility: float
+    estimated_score: int
+    asset_class_allocation: dict[str, float]
+
+
+class RiskToleranceStateResponse(BaseModel):
+    portfolio_id: str
+    profile: RiskToleranceProfileResponse
+    current_model: PortfolioRiskModelResponse
+
+
+class RiskReweightRequest(BaseModel):
+    risk_score: int | None = Field(default=None, ge=1, le=10)
+    bond_symbols: list[str] = Field(default_factory=list, max_length=12)
+    max_position_weight: float = Field(default=0.35, ge=0.05, le=1)
+
+    @field_validator("bond_symbols", mode="before")
+    @classmethod
+    def normalize_bond_symbols(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = value.split(",")
+        if not isinstance(value, list):
+            raise ValueError("bond_symbols must be a list of symbols.")
+        normalized: list[str] = []
+        for symbol in value:
+            clean = str(symbol).strip().upper()
+            if clean and clean not in normalized:
+                normalized.append(clean)
+        return normalized
+
+
+class RiskTargetAllocationResponse(BaseModel):
+    symbol: str
+    asset_class: str
+    risk_bucket: str
+    current_value: float
+    current_weight: float
+    target_value: float
+    target_weight: float
+    trade_value_delta: float
+    price: float | None = None
+    estimated_quantity_delta: float | None = None
+
+
+class RiskReweightResponse(BaseModel):
+    portfolio_id: str
+    total_equity: float
+    profile: RiskToleranceProfileResponse
+    current_model: PortfolioRiskModelResponse
+    allocations: list[RiskTargetAllocationResponse]
+    notes: list[str] = Field(default_factory=list)
+
+
+class BondRungInput(BaseModel):
+    label: str | None = Field(default=None, max_length=80)
+    ticker: str | None = Field(default=None, max_length=20)
+    allocation_weight: float = Field(default=0, ge=0, le=1)
+    face_value: float = Field(default=1000, gt=0, le=10_000_000)
+    market_price_pct: float = Field(default=100, gt=0, le=1000)
+    coupon_rate: float = Field(default=0.04, ge=0, le=1)
+    yield_to_maturity: float = Field(default=0.04, gt=-1, le=1)
+    years_to_maturity: float = Field(..., gt=0, le=50)
+    payments_per_year: Literal[1, 2, 4, 12] = 2
+
+    @field_validator("ticker", mode="before")
+    @classmethod
+    def normalize_optional_ticker(cls, value: object) -> str | None:
+        clean = str(value or "").strip().upper()
+        return clean or None
+
+
+class BondStrategyRequest(BaseModel):
+    strategy_type: Literal["ladder", "barbell"] = "ladder"
+    capital: float = Field(default=10_000, gt=0, le=1_000_000_000)
+    risk_score: int | None = Field(default=None, ge=1, le=10)
+    rungs: list[BondRungInput] = Field(..., min_length=1, max_length=12)
+
+
+class BondRungResultResponse(BaseModel):
+    label: str
+    ticker: str | None = None
+    weight: float
+    allocated_capital: float
+    face_value: float
+    market_price_pct: float
+    market_price: float
+    theoretical_price_pct: float
+    coupon_rate: float
+    yield_to_maturity: float
+    years_to_maturity: float
+    payments_per_year: int
+    units: float
+    annual_income: float
+    current_yield: float
+    maturity_principal: float
+    projected_terminal_value: float
+    total_return: float
+    annualized_return: float
+    macaulay_duration: float
+    modified_duration: float
+
+
+class BondStrategySummaryResponse(BaseModel):
+    allocated_capital: float
+    annual_income: float
+    portfolio_current_yield: float
+    weighted_yield_to_maturity: float
+    weighted_modified_duration: float
+    weighted_annualized_return: float
+    projected_maturity_proceeds: float
+
+
+class BondCashFlowResponse(BaseModel):
+    year: int
+    coupon_income: float
+    principal: float
+    total_cash_flow: float
+
+
+class BondStrategyResponse(BaseModel):
+    strategy_type: str
+    risk_score: int
+    capital: float
+    summary: BondStrategySummaryResponse
+    rungs: list[BondRungResultResponse]
+    cash_flow_schedule: list[BondCashFlowResponse]
+    notes: list[str] = Field(default_factory=list)
+
+
+class BondAssetResponse(BaseModel):
+    ticker: str
+    name: str
+    category: str
+    duration_bucket: str
+    term_proxy_years: float
+    credit_quality: str
+    risk_level: int
+    model_volatility: float
+    description: str
+    issuer_url: str
+    monitored: bool = False
+    price: float | None = None
+    previous_close: float | None = None
+    daily_return_pct: float | None = None
+    fetched_at: str | None = None
+
+
+class BondAssetsResponse(BaseModel):
+    portfolio_id: str
+    assets: list[BondAssetResponse]
+    missing_tickers: list[str]
+    recommended_ladder: list[BondRungInput]
+    recommended_barbell: list[BondRungInput]
+    note: str
+
+
+class BondAssetRefreshRequest(BaseModel):
+    tickers: list[str] = Field(default_factory=list, max_length=12)
+
+    @field_validator("tickers", mode="before")
+    @classmethod
+    def normalize_tickers(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = value.split(",")
+        if not isinstance(value, list):
+            raise ValueError("tickers must be a list of symbols.")
+        normalized: list[str] = []
+        for symbol in value:
+            clean = str(symbol).strip().upper()
+            if clean and clean not in normalized:
+                normalized.append(clean)
+        return normalized
 
 
 class TradeImpactRequest(BaseModel):
@@ -221,6 +411,7 @@ class PortfolioAnalyzeRequest(BaseModel):
 class PortfolioRiskCharts(BaseModel):
     covariance: MatrixChart
     correlation: MatrixChart
+    pairwise_observations: MatrixChart
     cleaned_correlation: MatrixChart | None = None
     cleaned_covariance: MatrixChart | None = None
     volatility_by_ticker: list[ChartPoint]
@@ -496,6 +687,8 @@ class PortfolioSettingsUpdate(BaseModel):
     risk_free_rate: float | None = Field(default=None, ge=-1, le=1)
     benchmark_symbols: list[str] | None = Field(default=None, max_length=20)
     cash_target_pct: float | None = Field(default=None, ge=0, le=1)
+    risk_tolerance_score: int | None = Field(default=None, ge=1, le=10)
+    bond_watchlist: list[str] | None = Field(default=None, max_length=12)
 
     @field_validator("benchmark_symbols", mode="before")
     @classmethod
@@ -515,12 +708,30 @@ class PortfolioSettingsUpdate(BaseModel):
                 seen.add(clean)
         return normalized
 
+    @field_validator("bond_watchlist", mode="before")
+    @classmethod
+    def normalize_bond_watchlist(cls, value: object) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.split(",")
+        if not isinstance(value, list):
+            raise ValueError("bond_watchlist must be a list of symbols.")
+        normalized: list[str] = []
+        for symbol in value:
+            clean = str(symbol).strip().upper()
+            if clean and clean not in normalized:
+                normalized.append(clean)
+        return normalized
+
 
 class PortfolioSettingsResponse(BaseModel):
     portfolio_id: str
     risk_free_rate: float
     benchmark_symbols: list[str]
     cash_target_pct: float | None = None
+    risk_tolerance_score: int = 5
+    bond_watchlist: list[str] = Field(default_factory=list)
     updated_at: str
 
 

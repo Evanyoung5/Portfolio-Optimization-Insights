@@ -202,6 +202,23 @@ small {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.demo-panel {
+  grid-column: 1 / -1;
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.demo-panel-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.demo-panel-copy p {
+  max-width: 72ch;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -235,6 +252,34 @@ small {
 
 .workspace {
   min-width: 0;
+}
+
+.demo-banner {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.09), rgba(163, 95, 0, 0.08));
+  border: 1px solid rgba(15, 118, 110, 0.28);
+  border-radius: 8px;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 18px 18px 0;
+  padding: 14px 16px;
+}
+
+.demo-banner strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.demo-banner p {
+  max-width: 68ch;
+}
+
+.demo-banner-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .tabs {
@@ -346,6 +391,33 @@ small {
   grid-column: 1 / -1;
 }
 
+.form-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.import-result:empty {
+  display: none;
+}
+
+.import-result {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.import-result strong {
+  color: var(--text);
+}
+
 .dense-form,
 .compact-form {
   grid-template-columns: 1fr;
@@ -445,6 +517,58 @@ textarea {
   line-height: 1.4;
 }
 
+.strategy-lab-guide {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.strategy-lab-layout {
+  align-items: stretch;
+}
+
+.strategy-lab-summary-panel {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+}
+
+.strategy-lab-chart-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.strategy-lab-chart-shell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 420px;
+  overflow: hidden;
+}
+
+.strategy-lab-chart-shell .line-chart {
+  height: 420px;
+}
+
+.strategy-slot-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.strategy-slot {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.strategy-slot span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .chart-panel {
   min-width: 0;
 }
@@ -493,6 +617,127 @@ textarea {
 }
 
 .risk-detail-grid {
+  margin-top: 12px;
+}
+
+.risk-tolerance-panel,
+.bond-builder-panel,
+.bond-explorer-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.risk-tolerance-head,
+.bond-monitor-head {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.risk-number-guide,
+.bond-primer,
+.risk-tolerance-layout {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-number-guide {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.risk-number-guide > div,
+.bond-primer > div {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.risk-number-guide strong {
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.risk-number-guide span,
+.bond-primer span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.risk-tolerance-layout {
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.risk-tolerance-form {
+  align-content: start;
+}
+
+.bond-primer {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bond-monitor-head .inline-form {
+  justify-content: flex-end;
+}
+
+.bond-monitor-head label {
+  min-width: 150px;
+}
+
+.bond-asset-name {
+  display: block;
+  font-weight: 700;
+  max-width: 320px;
+  white-space: normal;
+}
+
+.bond-assets-table small,
+#bond-assets-table small {
+  color: var(--muted);
+  display: block;
+  line-height: 1.35;
+  margin-top: 4px;
+  max-width: 360px;
+  white-space: normal;
+}
+
+#bond-assets-table a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+#bond-assets-table input[type="checkbox"] {
+  min-height: 18px;
+  width: 18px;
+}
+
+.bond-rung-table {
+  min-width: 980px;
+}
+
+.bond-rung-table input,
+.bond-rung-table select {
+  min-height: 34px;
+  min-width: 88px;
+  padding: 6px 8px;
+}
+
+.bond-rung-table input[data-field="label"] {
+  min-width: 150px;
+}
+
+.bond-rung-table .icon-button {
+  min-width: 34px;
+}
+
+#bond-strategy-summary {
+  margin: 12px 0;
+}
+
+#bond-strategy-notes,
+#bond-cash-flow-results {
   margin-top: 12px;
 }
 
@@ -788,6 +1033,82 @@ tbody tr.atm-row {
   color: #ffffff;
 }
 
+.matrix-cell.weak {
+  color: transparent;
+}
+
+.matrix-cell.diagonal {
+  font-weight: 800;
+}
+
+.correlation-temperature-panel,
+.range-control {
+  display: grid;
+  gap: 10px;
+}
+
+.range-control {
+  max-width: 620px;
+}
+
+.range-control input {
+  width: 100%;
+}
+
+.temperature-legend,
+.correlation-insights,
+.options-legend-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.temperature-legend {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 720px;
+}
+
+.temperature-legend span,
+.correlation-pair,
+.options-legend-grid > div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.temperature-legend span {
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.temperature-legend .inverse {
+  background: hsl(6 66% 38%);
+}
+
+.temperature-legend .neutral {
+  background: hsl(165 10% 48%);
+}
+
+.temperature-legend .together {
+  background: hsl(173 62% 31%);
+}
+
+.correlation-insights {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.correlation-pair {
+  align-items: center;
+  background: var(--surface-2);
+  display: flex;
+  justify-content: space-between;
+}
+
+.correlation-pair span {
+  font-weight: 800;
+}
+
 .heatmap-grid {
   height: clamp(420px, calc(100vh - 220px), 760px);
   min-height: 420px;
@@ -860,6 +1181,12 @@ tbody tr.atm-row {
     grid-template-columns: 1fr;
   }
 
+  .demo-panel,
+  .demo-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--border);
@@ -867,6 +1194,14 @@ tbody tr.atm-row {
 
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .risk-number-guide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .risk-tolerance-layout {
+    grid-template-columns: 1fr;
   }
 
   .app-shell.sidebar-collapsed {
@@ -885,7 +1220,10 @@ tbody tr.atm-row {
 
   .form-grid,
   .metric-grid,
-  .entry-guide {
+  .entry-guide,
+  .strategy-slot-grid,
+  .risk-number-guide,
+  .bond-primer {
     grid-template-columns: 1fr;
   }
 
@@ -1076,6 +1414,92 @@ tbody tr.atm-row {
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
+.demo-tour-overlay {
+  background: rgba(8, 14, 13, 0.26);
+  backdrop-filter: blur(2px);
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  z-index: 70;
+}
+
+.demo-tour-popover {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+  position: fixed;
+  width: min(420px, calc(100vw - 32px));
+  z-index: 72;
+}
+
+.demo-tour-kicker {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.demo-tour-step {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.demo-tour-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  background: var(--surface);
+  bottom: 0;
+  margin-top: 4px;
+  padding-top: 10px;
+  position: sticky;
+}
+
+.demo-tour-target {
+  border-radius: 8px;
+  outline: 3px solid rgba(15, 118, 110, 0.5);
+  outline-offset: 4px;
+  position: relative;
+  scroll-margin: 120px;
+  z-index: 71;
+}
+
+@media (max-width: 720px) {
+  .demo-tour-popover {
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+    width: calc(100vw - 20px);
+  }
+
+  .demo-tour-actions .button {
+    flex: 1 1 120px;
+  }
+}
+
+:root[data-theme="dark"] .demo-banner {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(240, 161, 74, 0.09));
+  border-color: rgba(45, 212, 191, 0.3);
+}
+
+:root[data-theme="dark"] .demo-tour-overlay {
+  background: rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .demo-tour-target {
+  outline-color: rgba(45, 212, 191, 0.62);
+}
+
 .quote-card {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1230,6 +1654,77 @@ tbody tr.atm-row {
   min-height: 420px;
 }
 
+.options-graph-legend,
+.options-legend-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.options-legend-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.options-legend-grid > div {
+  background: var(--surface-2);
+  display: grid;
+  gap: 6px;
+}
+
+.options-legend-grid p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.legend-line {
+  border-top: 4px solid;
+  display: block;
+  width: 38px;
+}
+
+.legend-line.call {
+  border-color: #0f766e;
+}
+
+.legend-line.put {
+  border-color: #8b1e3f;
+}
+
+.legend-line.combined {
+  border-color: #2f6f9f;
+}
+
+.legend-line.reference {
+  border-color: #a35f00;
+}
+
+.legend-line.dashed {
+  border-color: #0f766e;
+  border-top-style: dashed;
+}
+
+.legend-marker {
+  border: 3px solid #2f6f9f;
+  border-radius: 50%;
+  display: block;
+  height: 14px;
+  width: 14px;
+}
+
+.surface-filter-controls {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  margin: 12px 0;
+}
+
+.relbs-surface-chart,
+.relbs-surface-chart .relbs-plot {
+  min-height: 640px;
+}
+
 .options-history-controls {
   align-items: end;
   display: grid;
@@ -1243,7 +1738,9 @@ tbody tr.atm-row {
 
 @media (max-width: 900px) {
   .relativistic-bs-controls,
-  .options-history-controls {
+  .options-history-controls,
+  .surface-filter-controls,
+  .temperature-legend {
     grid-template-columns: 1fr;
   }
 }

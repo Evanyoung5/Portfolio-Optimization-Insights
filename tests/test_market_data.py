@@ -200,6 +200,73 @@ def test_performance_history_endpoint_returns_cached_series_and_queues_missing(c
     assert queued_payload["provider_signature"].startswith("account-")
 
 
+def test_performance_history_rejects_too_many_benchmarks(client, auth_headers, monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_MAX_BENCHMARK_TICKERS", "1")
+    created = client.post(
+        "/portfolios",
+        headers=auth_headers,
+        json={"name": "Benchmark Cap", "positions": [{"symbol": "AAPL", "quantity": 2, "price": 100}]},
+    ).json()
+
+    response = client.get(
+        f"/portfolios/{created['id']}/performance-history?range_name=max&benchmark_symbols=SPY,QQQ",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "benchmark comparison is limited to 1 ticker" in response.json()["detail"]
+
+
+def test_performance_history_includes_tickers_from_manual_trade_ledger(client, auth_headers, monkeypatch):
+    from app.connectors.market_data.history import PriceHistoryBundle
+
+    captured = {}
+    queued = []
+    created = client.post(
+        "/portfolios",
+        headers=auth_headers,
+        json={
+            "name": "Sold Ticker History",
+            "lots": [
+                {"ticker": "AAPL", "quantity": 1, "purchase_price": 100, "purchased_at": "2024-01-02T00:00:00Z"},
+                {"ticker": "BND", "quantity": 1, "purchase_price": 50, "purchased_at": "2024-01-02T00:00:00Z"},
+            ],
+        },
+    ).json()
+    trade_response = client.post(
+        f"/portfolios/{created['id']}/trades",
+        headers=auth_headers,
+        json={"ticker": "BND", "side": "sell", "quantity": 1, "price": 55, "occurred_at": "2024-01-03T00:00:00Z"},
+    )
+    assert trade_response.status_code == 201
+    assert [position["ticker"] for position in trade_response.json()["positions"]] == ["AAPL"]
+
+    def fake_cached(tickers, *, range_name, cache=None):
+        captured["tickers"] = tickers
+        return PriceHistoryBundle(
+            range_name="max",
+            period="max",
+            interval="1d",
+            series=[],
+            missing_tickers=list(tickers),
+        )
+
+    monkeypatch.setattr("app.api.routes.get_cached_price_history", fake_cached)
+    monkeypatch.setattr(
+        "app.api.routes.enqueue_background_job_message",
+        lambda job, **kwargs: queued.append((job, kwargs)),
+    )
+
+    response = client.get(
+        f"/portfolios/{created['id']}/performance-history?range_name=max&benchmark_symbols=SPY",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert captured["tickers"] == ["AAPL", "BND", "SPY"]
+    assert queued[0][1]["payload"]["tickers"] == ["AAPL", "BND", "SPY"]
+
+
 def test_worker_processes_market_history_refresh_job(monkeypatch):
     from app.connectors.market_data.history import PriceHistoryBundle
 
@@ -516,12 +583,12 @@ def test_refresh_market_data_waits_for_provider_rate_limit():
             self.calls = 0
             self.keys = []
 
-        def check(self, *, key, limit, window_seconds):
+        def check(self, *, key, limit, window_seconds, cost=1):
             self.calls += 1
             self.keys.append(key)
             if self.calls == 1:
-                return RateLimitResult(False, key, limit, 0, 17)
-            return RateLimitResult(True, key, limit, 0, 0)
+                return RateLimitResult(False, key, limit, 0, 17, cost=cost)
+            return RateLimitResult(True, key, limit, 0, 0, cost=cost)
 
     slept = []
     limiter = OneRetryLimiter()
@@ -542,12 +609,15 @@ def test_refresh_market_data_waits_for_provider_rate_limit():
     assert connector.fetched == [["AAPL"]]
     assert quotes[0].ticker == "AAPL"
     assert limiter.keys == [
-        "market-data:provider:fake:signature:account-alpha:minute",
+        "market-data:provider:fake:global:minute",
+        "market-data:provider:fake:global:minute",
         "market-data:provider:fake:signature:account-alpha:minute",
     ]
 
 
-def test_provider_rate_limit_is_partitioned_by_account_signature():
+def test_provider_rate_limit_is_partitioned_by_account_signature(monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE", "1")
+    monkeypatch.setenv("MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE", "10")
     limiter = InMemoryRateLimiter()
 
     first = acquire_provider_fetch_slot(
@@ -568,6 +638,52 @@ def test_provider_rate_limit_is_partitioned_by_account_signature():
             provider="fake",
             provider_signature="account-alpha",
             limiter=limiter,
+        )
+
+
+def test_provider_global_rate_limit_caps_multiple_accounts(monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE", "10")
+    monkeypatch.setenv("MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE", "2")
+    limiter = InMemoryRateLimiter()
+
+    acquire_provider_fetch_slot(provider="fake", provider_signature="account-alpha", limiter=limiter)
+    acquire_provider_fetch_slot(provider="fake", provider_signature="account-beta", limiter=limiter)
+
+    with pytest.raises(RateLimitExceeded):
+        acquire_provider_fetch_slot(provider="fake", provider_signature="account-gamma", limiter=limiter)
+
+
+def test_provider_rate_limit_charges_weighted_cost(monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE", "3")
+    monkeypatch.setenv("MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE", "10")
+    limiter = InMemoryRateLimiter()
+
+    acquire_provider_fetch_slot(provider="fake", provider_signature="account-alpha", limiter=limiter, cost=2)
+
+    with pytest.raises(RateLimitExceeded):
+        acquire_provider_fetch_slot(provider="fake", provider_signature="account-alpha", limiter=limiter, cost=2)
+
+
+def test_refresh_market_data_rejects_too_many_tickers(monkeypatch):
+    class FakeCache:
+        def get_many(self, tickers):
+            return []
+
+    class FakeConnector:
+        provider = "fake"
+
+        def fetch_quotes(self, tickers):
+            raise AssertionError("fetch_quotes should not run")
+
+    monkeypatch.setenv("MARKET_DATA_MAX_REFRESH_TICKERS", "1")
+
+    with pytest.raises(ValueError, match="market-data refresh is limited to 1 ticker"):
+        refresh_market_data_quotes(
+            ["AAPL", "MSFT"],
+            portfolio_repository,
+            connector=FakeConnector(),
+            cache=FakeCache(),
+            rate_limiter=InMemoryRateLimiter(),
         )
 
 

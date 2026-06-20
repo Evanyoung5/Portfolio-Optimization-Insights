@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portfolio Optimization</title>
-  <script>document.documentElement.dataset.theme = localStorage.getItem("portfolio_theme") || "light";</script>
-  <link rel="stylesheet" href="/static/styles.css?v=client-history-options-ui-2026-06-01">
+  <script src="/static/theme-init.js?v=client-public-ready-2026-06-19-1"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=client-public-ready-2026-06-19-1">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -22,6 +22,8 @@
       <button id="sidebar-toggle" class="icon-button" type="button" title="Collapse portfolio sidebar" aria-pressed="false" aria-label="Collapse portfolio sidebar">&#9776;</button>
       <span id="runtime-pill" class="pill muted">Runtime unknown</span>
       <span id="user-pill" class="pill muted">Signed out</span>
+      <button id="demo-tour-button" class="button secondary" type="button" hidden>Guide</button>
+      <button id="demo-exit-button" class="button ghost" type="button" hidden>Exit demo</button>
       <button id="logout-button" class="button ghost" type="button" hidden>Log out</button>
     </div>
   </header>
@@ -42,7 +44,7 @@
         <form id="register-form" class="panel form-grid">
           <h3>Create Account</h3>
           <label>Email<input name="email" type="email" autocomplete="email" required></label>
-          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number." required></label>
           <button class="button primary" type="submit">Register</button>
         </form>
         <form id="password-reset-request-form" class="panel form-grid compact-form">
@@ -53,9 +55,17 @@
         <form id="password-reset-confirm-form" class="panel form-grid compact-form">
           <h3>Set New Password</h3>
           <label>Token<input name="token"></label>
-          <label>New Password<input name="new_password" type="password" minlength="8"></label>
+          <label>New Password<input name="new_password" type="password" minlength="10" title="Use at least 10 characters with upper-case, lower-case, and a number."></label>
           <button class="button secondary" type="submit">Set password</button>
         </form>
+        <section class="panel demo-panel">
+          <div class="demo-panel-copy">
+            <span class="pill">Interactive demo</span>
+            <h3>Explore the app before you sign up</h3>
+            <p>Open a diverse sample portfolio, compare it to benchmarks, inspect the options and bond tools, and place temporary demo trades that disappear when the session ends.</p>
+          </div>
+          <button id="demo-start" class="button primary" type="button">Explore demo</button>
+        </section>
       </div>
     </section>
   </main>
@@ -82,11 +92,23 @@
     </aside>
 
     <section class="workspace">
+      <section id="demo-banner" class="demo-banner" hidden>
+        <div>
+          <strong>Demo workspace</strong>
+          <p>This session runs locally in your browser. Demo trades update the portfolio in memory, and nothing is saved after you leave.</p>
+        </div>
+        <div class="demo-banner-actions">
+          <button id="demo-banner-tour" class="button secondary" type="button">Replay guide</button>
+          <button id="demo-banner-exit" class="button ghost" type="button">Exit demo</button>
+        </div>
+      </section>
       <nav class="tabs" aria-label="Workspace tabs">
         <button class="tab active" data-tab="dashboard" type="button">Dashboard</button>
         <button class="tab" data-tab="entry" type="button">Entry</button>
         <button class="tab" data-tab="risk" type="button">Risk</button>
+        <button class="tab" data-tab="bonds" type="button">Bond Monitor</button>
         <button class="tab" data-tab="relativistic-bs" type="button">Options Suite</button>
+        <button class="tab" data-tab="strategy-lab" type="button">Strategy Lab</button>
         <button class="tab" data-tab="heatmap" type="button">Heatmap</button>
         <button class="tab" data-tab="optimize" type="button">Optimize</button>
         <button class="tab" data-tab="simulate" type="button">Simulate</button>
@@ -223,15 +245,71 @@
             </form>
 
             <form id="csv-form" class="panel form-grid">
-              <h3>CSV Upload</h3>
-              <label class="span-2">Positions CSV<input name="file" type="file" accept=".csv,text/csv" required></label>
-              <button class="button secondary" type="submit">Upload positions</button>
+              <h3>Brokerage CSV Import</h3>
+              <p class="span-2 form-help">Upload a positions export directly from Fidelity, E*TRADE, or Schwab, or an all-time transaction-history export from Coinbase. The importer detects the format, keeps available cost basis, combines duplicate tickers, and refreshes market prices after import. Importing replaces the portfolio's current positions and lots.</p>
+              <label class="span-2">Brokerage export<input name="file" type="file" accept=".csv,text/csv,.txt,text/plain" required></label>
+              <button class="button secondary" type="submit">Import brokerage file</button>
+              <div id="csv-import-result" class="span-2 import-result" role="status" aria-live="polite"></div>
             </form>
           </div>
           <div class="layout-two">
             <section class="panel"><h3>Lots</h3><div id="lots-table" class="table-wrap"></div></section>
             <section class="panel"><h3>Trade History</h3><div id="trade-table" class="table-wrap"></div></section>
           </div>
+        </section>
+
+        <section id="bonds" class="page">
+          <div class="page-head">
+            <div>
+              <h2>Bond Monitor</h2>
+              <p>Explore exchange-traded bond funds, monitor cached prices, and model conventional bond ladders or barbells that match the saved risk score.</p>
+            </div>
+            <button id="bond-refresh" class="button secondary" type="button">Refresh monitored prices</button>
+          </div>
+
+          <section class="panel bond-primer">
+            <div><strong>ETF price</strong><span>A live share price for a publicly traded bond fund. The fund has no guaranteed maturity value.</span></div>
+            <div><strong>Bond price per $100</strong><span>The ladder input for an individual bond quoted as a percentage of face value. A price of 98 means $980 for $1,000 face value.</span></div>
+            <div><strong>Yield and duration</strong><span>Yield estimates return if payments occur; duration estimates price sensitivity to interest-rate changes.</span></div>
+          </section>
+
+          <section class="panel bond-explorer-panel">
+            <div class="section-head bond-monitor-head">
+              <div><h3>Public Bond Assets</h3><p id="bond-market-note" class="chart-note"></p></div>
+              <div class="inline-form">
+                <label>Category<select id="bond-category-filter"><option value="all">All categories</option><option value="Treasury">Treasury</option><option value="Treasury bills">Treasury bills</option><option value="Inflation protected">Inflation protected</option><option value="Aggregate">Aggregate</option><option value="Corporate">Corporate</option><option value="High yield corporate">High yield corporate</option><option value="Municipal">Municipal</option></select></label>
+                <label class="checkbox-label"><input id="bond-watchlist-only" type="checkbox"> Monitored only</label>
+                <button id="bond-save-watchlist" class="button secondary" type="button">Save watchlist</button>
+              </div>
+            </div>
+            <div id="bond-assets-table" class="table-wrap"></div>
+          </section>
+
+          <section class="panel bond-builder-panel">
+            <div class="section-head">
+              <div>
+                <h3>Ladder And Barbell Builder</h3>
+                <p class="chart-note">A ladder spreads maturities across time. A barbell concentrates at short and long maturities. Enter assumptions for conventional coupon bonds; this is not an order ticket.</p>
+              </div>
+              <button id="bond-load-recommendation" class="button secondary" type="button">Load risk-fit structure</button>
+            </div>
+            <form id="bond-strategy-form" class="form-grid bond-strategy-controls">
+              <label>Structure<select id="bond-strategy-type" name="strategy_type"><option value="ladder">Ladder</option><option value="barbell">Barbell</option></select></label>
+              <label>Capital<input name="capital" type="number" min="0" step="100" value="10000"></label>
+              <label>Risk score<input id="bond-risk-score" name="risk_score" type="number" min="1" max="10" step="1" value="5"></label>
+              <button id="bond-add-rung" class="button secondary" type="button">Add rung</button>
+              <div class="span-2 table-wrap"><table class="bond-rung-table"><thead><tr><th>Rung</th><th>Years</th><th>Coupon %</th><th>YTM %</th><th>Price / $100</th><th>Weight %</th><th>Payments</th><th></th></tr></thead><tbody id="bond-rung-rows"></tbody></table></div>
+              <button class="button primary" type="submit">Calculate strategy</button>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h3>Strategy Results</h3>
+            <div id="bond-strategy-summary" class="metric-grid"></div>
+            <div id="bond-strategy-notes" class="activity-feed"></div>
+            <div id="bond-strategy-results" class="table-wrap"></div>
+            <div id="bond-cash-flow-results" class="table-wrap"></div>
+          </section>
         </section>
 
         <section id="risk" class="page">
@@ -248,6 +326,35 @@
               <label><input type="checkbox" data-graph-toggle="risk-covariance" checked> Annualized covariance</label>
             </details>
           </div>
+          <section class="panel risk-tolerance-panel">
+            <div class="section-head risk-tolerance-head">
+              <div>
+                <h3>Risk Tolerance And Target Allocation</h3>
+                <p class="chart-note">Risk scores are planning inputs, not loss limits. The target-volatility number estimates typical annual variability; a 12% target can still experience a loss much larger than 12%.</p>
+              </div>
+              <span id="risk-tolerance-status" class="pill muted">Loading profile</span>
+            </div>
+            <div class="risk-number-guide" aria-label="Risk score guide">
+              <div><strong>1-2</strong><span>Capital preservation. Smaller modeled swings, mostly bonds and cash.</span></div>
+              <div><strong>3-4</strong><span>Conservative. Limited growth exposure with a substantial fixed-income cushion.</span></div>
+              <div><strong>5-6</strong><span>Balanced. Meaningful growth and bond exposure; double-digit declines remain possible.</span></div>
+              <div><strong>7-8</strong><span>Growth. Larger fluctuations and longer recovery periods should be expected.</span></div>
+              <div><strong>9-10</strong><span>Aggressive. Very large drawdowns are plausible and bond/cash buffers are small.</span></div>
+            </div>
+            <div class="risk-tolerance-layout">
+              <form id="risk-tolerance-form" class="form-grid risk-tolerance-form">
+                <label class="span-2 range-control">Selected risk score: <output id="risk-tolerance-score-value">5</output><input id="risk-tolerance-score" name="risk_tolerance_score" type="range" min="1" max="10" step="1" value="5"></label>
+                <label class="span-2">Bond assets for the target sleeve<input name="bond_symbols" placeholder="AGG, SHY" title="Choose public bond ETFs from the Bond Monitor. These are used only for a target-allocation preview."><span class="field-help">Leave blank to show an unallocated bond sleeve.</span></label>
+                <label>Maximum single position<input name="max_position_weight" type="number" min="0.05" max="1" step="0.01" value="0.35"><span class="field-help">Decimal weight, such as 0.35 for 35%.</span></label>
+                <button class="button primary" type="submit">Save and build targets</button>
+              </form>
+              <div>
+                <div id="risk-profile-summary" class="result-grid"></div>
+                <div id="risk-profile-description" class="activity-feed"></div>
+              </div>
+            </div>
+            <div id="risk-reweight-results" class="table-wrap"></div>
+          </section>
           <div class="layout-two">
             <form id="risk-form" class="panel form-grid">
               <h3>Risk Inputs</h3>
@@ -262,9 +369,18 @@
             <section class="panel"><h3>Risk Summary</h3><p class="chart-note">Portfolio volatility uses your current position weights and the covariance matrix below. Annualized volatility scales daily movement by the square root of 252 trading days.</p><div id="risk-summary" class="result-grid"></div></section>
           </div>
           <section class="panel graph-panel" data-graph-panel="risk-volatility"><h3>Annualized Volatility</h3><p class="chart-note">Bars estimate each holding's typical one-year volatility from the selected history. Higher values mean a wider range of likely price movement.</p><div id="risk-volatility" class="bar-list"></div></section>
+          <section class="panel correlation-temperature-panel">
+            <div>
+              <h3>Correlation Temperature</h3>
+              <p class="chart-note">Use the threshold to mute weak relationships and leave the strongest co-movements visible. This changes the display only; the underlying risk calculation still uses the full matrix.</p>
+            </div>
+            <label class="range-control">Show labels at |correlation| >= <output id="risk-correlation-threshold-value">0.20</output><input id="risk-correlation-threshold" type="range" min="0" max="0.9" step="0.05" value="0.2"></label>
+            <div class="temperature-legend" aria-label="Correlation color legend"><span class="inverse">Moves opposite</span><span class="neutral">Muted weak signal</span><span class="together">Moves together</span></div>
+            <div id="risk-correlation-insights" class="correlation-insights"></div>
+          </section>
           <section class="panel graph-panel" data-graph-panel="risk-cleaned-correlation"><h3>Portfolio Correlation</h3><p class="chart-note">This is the cleaned correlation view when RMT cleaning is enabled. Values near 1 move together, near -1 move opposite, and near 0 are less related.</p><div id="correlation-heatmap" class="matrix-grid"></div></section>
           <section class="panel graph-panel" data-graph-panel="risk-raw-correlation"><h3>Raw Correlation</h3><p class="chart-note">The uncleaned matrix preserves the direct sample estimate so you can compare it with the RMT-cleaned view.</p><div id="raw-correlation-heatmap" class="matrix-grid"></div></section>
-          <section class="panel graph-panel" data-graph-panel="risk-covariance"><h3>Annualized Covariance</h3><p class="chart-note">Annualized covariance describes how pairs of holdings vary together. Small decimals are shown with extra precision.</p><div id="risk-covariance-heatmap" class="matrix-grid"></div></section>
+          <section class="panel graph-panel" data-graph-panel="risk-covariance"><h3>Annualized Covariance</h3><p class="chart-note">Annualized covariance describes how pairs of holdings vary together. Diagonal self-cells are variances, so they display the more intuitive annualized volatility; hover a diagonal cell to see its variance. Off-diagonal cells retain covariance units.</p><div id="risk-covariance-heatmap" class="matrix-grid"></div></section>
         </section>
 
         <section id="relativistic-bs" class="page">
@@ -292,6 +408,19 @@
             <p><strong>Relativistic Black-Scholes</strong> keeps the same inputs but applies a correction controlled by <code>c_m</code>; larger <code>c_m</code> moves the result closer to normal Black-Scholes.</p>
             <p><strong>Options-suite charts</strong> use listed implied volatility, volume, and open interest when yfinance contracts are available. Sparse chains can make these views noisy, so treat them as diagnostics rather than trading signals.</p>
           </div>
+
+          <section class="panel options-graph-legend">
+            <h3>Options Graph Legend</h3>
+            <p class="chart-note">The same colors carry similar meanings across the suite. Plotly legends remain interactive: click a series name to hide or restore it.</p>
+            <div class="options-legend-grid">
+              <div><span class="legend-line call"></span><strong>Calls</strong><p>Teal lines and bars represent call-side prices, IV, volume, or gamma exposure.</p></div>
+              <div><span class="legend-line put"></span><strong>Puts</strong><p>Burgundy lines and bars represent put-side prices, IV, volume, or gamma exposure.</p></div>
+              <div><span class="legend-line combined"></span><strong>Combined or net</strong><p>Blue lines summarize average IV, net gamma exposure, or cumulative call volume.</p></div>
+              <div><span class="legend-line reference"></span><strong>Reference</strong><p>Amber lines show the selected baseline sigma or cumulative put volume.</p></div>
+              <div><span class="legend-line dashed"></span><strong>Dashed model line</strong><p>Dashed lines distinguish normal Black-Scholes or other reference series.</p></div>
+              <div><span class="legend-marker"></span><strong>Market observation</strong><p>Open markers are listed market prices. Surface color runs from lower to higher implied volatility.</p></div>
+            </div>
+          </section>
 
           <form id="relativistic-bs-form" class="panel form-grid relativistic-bs-controls">
             <h3>Model Controls</h3>
@@ -337,7 +466,7 @@
 
           <section class="panel graph-panel" data-graph-panel="options-smile">
               <h3>Volatility Smile</h3>
-              <p class="chart-note">The smile shows listed implied volatility by strike. A curve above your baseline volatility means the model will usually underprice those contracts unless sigma is raised.</p>
+              <p class="chart-note">The smile joins meaningful listed implied-volatility observations by strike. Provider sentinel values and missing side quotes are omitted. A curve above your baseline volatility means the model will usually underprice those contracts unless sigma is raised.</p>
               <div id="relativistic-bs-smile-chart" class="relbs-chart"></div>
           </section>
           <section class="panel graph-panel" data-graph-panel="options-volume">
@@ -353,17 +482,25 @@
           </section>
           <section class="panel graph-panel" data-graph-panel="options-iv-surface">
               <h3>Implied Volatility Surface</h3>
-              <p class="chart-note">The surface compares average market IV across moneyness and expiration. Peaks show where the chain prices more uncertainty.</p>
-              <div id="relativistic-bs-iv-surface-chart" class="relbs-chart"></div>
+              <p class="chart-note">The surface compares average market IV across moneyness and expiration. It interpolates between meaningful near-spot listed observations so sparse far-out strikes do not create visual holes. Peaks show where the chain prices more uncertainty.</p>
+              <div class="surface-filter-controls">
+                <label>Expiry from<input id="relativistic-bs-surface-expiry-min" type="date"><span class="field-help">Blank includes the earliest fetched expiry.</span></label>
+                <label>Expiry through<input id="relativistic-bs-surface-expiry-max" type="date"><span class="field-help">Blank includes the latest fetched expiry.</span></label>
+                <label>Min moneyness<input id="relativistic-bs-surface-moneyness-min" type="number" min="0.5" max="1.5" step="0.05" value="0.75"><span class="field-help">Strike divided by spot.</span></label>
+                <label>Max moneyness<input id="relativistic-bs-surface-moneyness-max" type="number" min="0.5" max="1.5" step="0.05" value="1.25"><span class="field-help">Strike divided by spot.</span></label>
+                <button id="relativistic-bs-surface-reset" class="button secondary" type="button">Reset surface view</button>
+              </div>
+              <p id="relativistic-bs-surface-filter-note" class="chart-note"></p>
+              <div id="relativistic-bs-iv-surface-chart" class="relbs-chart relbs-surface-chart"></div>
           </section>
 
           <section class="panel options-history-controls">
             <div>
               <h3>Saved Chain History</h3>
-              <p class="chart-note">These dated charts use snapshots captured when you run or refresh the suite. Changing resolution and zoom reads saved data only.</p>
+              <p class="chart-note">These dated charts use snapshots captured when you run or refresh the suite. A trend appears after at least two captures for the selected expiry. Changing resolution and zoom reads saved data only.</p>
             </div>
             <label>Resolution<select id="relativistic-bs-history-resolution"><option value="auto">Auto</option><option value="raw">Raw captures</option><option value="hour">Hourly</option><option value="day">Daily</option><option value="week">Weekly</option></select></label>
-            <label>Lookback<select id="relativistic-bs-history-lookback"><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365" selected>1 year</option></select></label>
+            <label>Lookback<select id="relativistic-bs-history-lookback"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label>
             <p id="relativistic-bs-history-note" class="chart-note"></p>
           </section>
           <section class="panel graph-panel" data-graph-panel="options-history-iv"><h3>ATM Implied Volatility History</h3><p class="chart-note">Tracks the at-the-money implied volatility observed in saved chains over time.</p><div id="relativistic-bs-history-iv-chart" class="relbs-chart"></div></section>
@@ -374,6 +511,74 @@
           <section class="panel">
             <h3>Option Chain</h3>
             <div id="relativistic-bs-surface" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="strategy-lab" class="page">
+          <div class="page-head">
+            <div>
+              <h2>Strategy Lab</h2>
+              <p>Test lightweight portfolio ideas in an isolated sandbox. This tab uses cached portfolio and market-history data, and it does not place trades, connect to a broker, or refresh live option chains.</p>
+            </div>
+            <span class="pill muted">Isolated sandbox</span>
+          </div>
+
+          <section class="panel entry-guide strategy-lab-guide">
+            <div><strong>Cached history</strong><span>Scenario runs read the same history already used by the dashboard and risk tab.</span></div>
+            <div><strong>Options-aware</strong><span>Covered calls and covered puts can now reuse the loaded Options Suite chain, or fall back to a modeled contract when no live chain is loaded.</span></div>
+            <div><strong>Expandable</strong><span>The controls stay lightweight, but the lab can now test stock-only and options-linked ideas without touching the live portfolio.</span></div>
+          </section>
+
+          <div class="layout-two strategy-lab-layout">
+            <form id="strategy-lab-form" class="panel form-grid">
+              <h3>Lightweight Scenario</h3>
+              <label>Universe<select id="strategy-lab-universe" name="universe"><option value="portfolio">Current portfolio</option><option value="options_symbol">Latest Options Suite symbol</option><option value="benchmarks">Selected benchmarks</option><option value="custom">Custom tickers</option></select></label>
+              <label>Strategy<select name="strategy_type"><option value="buy_hold">Buy and hold</option><option value="equal_rebalance">Equal-weight rebalance</option><option value="momentum_tilt">Simple momentum tilt</option></select></label>
+              <label class="span-2">Tickers<input id="strategy-lab-tickers" name="tickers" placeholder="AAPL, MSFT, SPY" title="Use up to eight symbols. Leave blank to use the selected universe."></label>
+              <label>Range<select name="strategy_range"><option value="month">1 month</option><option value="ytd">YTD</option><option value="year" selected>1 year</option><option value="five_year">5 years</option><option value="max">Max since 2005</option></select></label>
+              <label>Starting Capital<input name="capital" type="number" min="0" step="100" value="10000"></label>
+              <label>Rebalance<select name="rebalance"><option value="none">None</option><option value="monthly" selected>Monthly</option><option value="quarterly">Quarterly</option></select><span class="field-help">Buy and hold ignores this. The rebalance cadence resets stock weights only.</span></label>
+              <label>Max Single Weight<input name="max_weight" type="number" min="0.05" max="1" step="0.01" value="0.35" title="Caps any one symbol's target weight. If the cap is too low for the number of symbols, the lab raises it to the minimum feasible equal weight."></label>
+              <label>Option Underlying<input id="strategy-lab-options-symbol" name="options_symbol" placeholder="Optional; defaults to the latest Options Suite symbol" title="Use one symbol from the selected strategy universe. If blank, the lab uses the latest Options Suite symbol or the first selected ticker."><span class="field-help">Covered options apply to this one sleeve of the strategy.</span></label>
+              <label class="span-2">Options Overlay<select name="options_overlay"><option value="none">No option overlay</option><option value="covered_call">Covered call</option><option value="covered_put">Covered put (cash-secured)</option></select><span class="field-help">Covered calls cap upside in exchange for premium. Covered puts are modeled here as cash-secured short puts on the selected underlying sleeve.</span></label>
+              <label class="span-2">Thesis<textarea name="notes" rows="4" placeholder="Optional notes about what you are testing."></textarea></label>
+              <button class="button primary" type="submit">Run scenario</button>
+            </form>
+
+            <section class="panel strategy-lab-summary-panel">
+              <h3>Run Summary</h3>
+              <div id="strategy-lab-summary" class="result-grid"></div>
+            </section>
+          </div>
+
+          <section class="panel chart-panel strategy-lab-chart-panel">
+            <div class="section-head">
+              <div>
+                <h3>Strategy Return Curve</h3>
+                <p class="chart-note">The curve is normalized to percentage return so it can be compared with the portfolio and benchmarks on the same scale.</p>
+              </div>
+              <span id="strategy-lab-status" class="pill muted">Ready</span>
+            </div>
+            <div id="strategy-lab-legend" class="performance-legend"></div>
+            <div class="strategy-lab-chart-shell">
+              <canvas id="strategy-lab-chart" class="line-chart" width="1280" height="440" aria-label="Strategy lab cumulative percentage return"></canvas>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>Research Notes</h3>
+            <div id="strategy-lab-notes" class="activity-feed"></div>
+          </section>
+
+          <section class="panel">
+            <h3>How These Strategies Work</h3>
+            <div class="strategy-slot-grid">
+              <div class="strategy-slot"><strong>Buy and hold</strong><span>Starts with the chosen weights and then lets winners and losers drift. No scheduled weight reset is applied after the initial allocation.</span></div>
+              <div class="strategy-slot"><strong>Equal-weight rebalance</strong><span>Resets every active symbol to the same weight on the chosen rebalance cadence, which naturally trims relative winners and adds to laggards.</span></div>
+              <div class="strategy-slot"><strong>Momentum tilt</strong><span>Looks back over the most recent twenty aligned observations at each rebalance date and shifts more weight toward the strongest trailing performers, subject to the max-position cap.</span></div>
+              <div class="strategy-slot"><strong>Covered call</strong><span>Keeps the stock sleeve, sells a call against it, collects premium, and gives up part of the upside once the stock rises beyond the selected strike.</span></div>
+              <div class="strategy-slot"><strong>Covered put</strong><span>Models a cash-secured short put sleeve on the selected underlying: the strategy earns premium up front but absorbs losses if the stock finishes below the strike.</span></div>
+            </div>
           </section>
         </section>
 
@@ -462,7 +667,21 @@
     </section>
   </div>
 
+  <div id="demo-tour-overlay" class="demo-tour-overlay" hidden></div>
+  <section id="demo-tour-popover" class="demo-tour-popover" hidden aria-live="polite">
+    <div class="demo-tour-kicker">Guided walkthrough</div>
+    <h2 id="demo-tour-title">Explore the workspace</h2>
+    <p id="demo-tour-body">The demo will walk through the major features and point out where to try them.</p>
+    <div id="demo-tour-step" class="demo-tour-step">1 / 1</div>
+    <div class="demo-tour-actions">
+      <button id="demo-tour-exit" class="button ghost" type="button">Exit demo</button>
+      <button id="demo-tour-back" class="button secondary" type="button">Back</button>
+      <button id="demo-tour-next" class="button primary" type="button">Next</button>
+    </div>
+  </section>
+
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
-  <script src="/static/app.js?v=client-history-options-ui-2026-06-01" defer></script>
+  <script src="/static/demo-data.js?v=client-public-ready-2026-06-19-1" defer></script>
+  <script src="/static/app.js?v=client-public-ready-2026-06-19-1" defer></script>
 </body>
 </html>

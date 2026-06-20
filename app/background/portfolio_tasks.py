@@ -352,6 +352,13 @@ def update_portfolio_settings(
     if "cash_target_pct" in payload:
         value = payload["cash_target_pct"]
         settings.cash_target_pct = float(value) if value is not None else None
+    if "risk_tolerance_score" in payload and payload["risk_tolerance_score"] is not None:
+        score = int(payload["risk_tolerance_score"])
+        if not 1 <= score <= 10:
+            raise ValueError("risk_tolerance_score must be between 1 and 10.")
+        settings.risk_tolerance_score = score
+    if "bond_watchlist" in payload and payload["bond_watchlist"] is not None:
+        settings.bond_watchlist = _normalize_unique_symbols(payload["bond_watchlist"])
     return repository.upsert_portfolio_settings(settings)
 
 

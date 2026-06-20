@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from math import isfinite
 
 import numpy as np
 
@@ -73,6 +74,7 @@ from app.quant.rmt import (
     clean_correlation_rmt,
     compute_returns,
     covariance_from_clean_correlation,
+    pairwise_observation_counts,
     sample_correlation,
     sample_covariance,
 )
@@ -553,18 +555,21 @@ def _build_risk_charts(
     returns = compute_returns(price_array)
     covariance = sample_covariance(returns)
     correlation = sample_correlation(returns)
+    observation_counts = pairwise_observation_counts(returns)
     volatilities = np.sqrt(np.clip(np.diag(covariance), 0.0, None))
 
     cleaned_correlation = None
     cleaned_covariance = None
     if use_rmt_cleaning:
-        n_observations = max(int(np.asarray(returns).shape[0]), 1)
+        diagonal_counts = np.diag(observation_counts)
+        n_observations = max(int(diagonal_counts.min()) if diagonal_counts.size else 0, 1)
         cleaned_correlation = clean_correlation_rmt(correlation, n_observations=n_observations)
         cleaned_covariance = covariance_from_clean_correlation(cleaned_correlation, volatilities)
 
     return PortfolioRiskCharts(
         covariance=_matrix_chart(tickers, covariance),
         correlation=_matrix_chart(tickers, correlation),
+        pairwise_observations=_matrix_chart(tickers, observation_counts),
         cleaned_correlation=_matrix_chart(tickers, cleaned_correlation)
         if cleaned_correlation is not None
         else None,
@@ -979,11 +984,17 @@ def build_relativistic_bs_history_response(
     for record in records:
         payload = dict(record.payload or {})
         chain = dict(payload.get("chain") or {})
-        spot = float(payload.get("spot") or 0)
+        spot = _finite_positive_float(payload.get("spot"))
         calls = list(chain.get("calls") or [])
         puts = list(chain.get("puts") or [])
-        strikes = sorted({float(item["strike"]) for item in calls + puts if item.get("strike") is not None})
-        if spot <= 0 or not strikes:
+        strikes = sorted(
+            {
+                parsed
+                for item in calls + puts
+                if (parsed := _finite_positive_float(item.get("strike"))) is not None
+            }
+        )
+        if spot is None or not strikes:
             continue
         atm_strike = min(strikes, key=lambda strike: abs(strike - spot))
         call = _option_contract_payload_at_strike(calls, atm_strike)
@@ -998,6 +1009,7 @@ def build_relativistic_bs_history_response(
             chain_rows=chain_rows,
         )
         tau = max((record.expiry - record.fetched_at.date()).days / 365.25, 1 / 365.25)
+        model_sigma = atm_iv or sigma
         raw_points.append(
             RelativisticBSHistoryPoint(
                 as_of=record.fetched_at.isoformat(),
@@ -1006,10 +1018,14 @@ def build_relativistic_bs_history_response(
                 atm_strike=atm_strike,
                 atm_iv=atm_iv,
                 total_gamma_exposure=sum(float(item["net_gamma_exposure"]) for item in gamma),
-                total_volume=sum(float(row["call"].get("volume") or 0) + float(row["put"].get("volume") or 0) for row in chain_rows),
+                total_volume=sum(
+                    (_finite_nonnegative_float(row["call"].get("volume")) or 0)
+                    + (_finite_nonnegative_float(row["put"].get("volume")) or 0)
+                    for row in chain_rows
+                ),
                 atm_market_price=_stored_market_price(call),
-                atm_bs_price=black_scholes_price(spot, atm_strike, tau, rate, atm_iv or sigma, "call"),
-                atm_relativistic_price=relativistic_bs_price_approx(spot, atm_strike, tau, rate, atm_iv or sigma, c_m, "call"),
+                atm_bs_price=black_scholes_price(spot, atm_strike, tau, rate, model_sigma, "call"),
+                atm_relativistic_price=relativistic_bs_price_approx(spot, atm_strike, tau, rate, model_sigma, c_m, "call"),
             )
         )
     points = _aggregate_option_history(raw_points, resolution)
@@ -1019,6 +1035,9 @@ def build_relativistic_bs_history_response(
     )
     if limited:
         note += f" {requested_resolution.title()} detail was reduced to {resolution} for the selected lookback."
+    capture_times = {point.as_of for point in raw_points}
+    if len(capture_times) < 2:
+        note += " One saved capture is available; refresh the live chain later to create a meaningful trend line."
     return PortfolioRelativisticBSHistoryResponse(
         portfolio_id=portfolio.id,
         symbol=symbol.strip().upper(),
@@ -1070,11 +1089,25 @@ def _aggregate_option_history(points: list[RelativisticBSHistoryPoint], resoluti
 
 
 def _option_contract_payload_at_strike(contracts: list[dict[str, object]], strike: float) -> dict[str, object]:
-    return next((item for item in contracts if abs(float(item.get("strike") or 0) - strike) < 1e-8), {})
+    return next(
+        (
+            item
+            for item in contracts
+            if (parsed := _finite_positive_float(item.get("strike"))) is not None
+            and abs(parsed - strike) < 1e-8
+        ),
+        {},
+    )
 
 
 def _stored_chain_rows(calls: list[dict[str, object]], puts: list[dict[str, object]]) -> list[dict[str, object]]:
-    strikes = sorted({float(item["strike"]) for item in calls + puts if item.get("strike") is not None})
+    strikes = sorted(
+        {
+            parsed
+            for item in calls + puts
+            if (parsed := _finite_positive_float(item.get("strike"))) is not None
+        }
+    )
     return [
         {
             "strike": strike,
@@ -1090,17 +1123,40 @@ def _stored_quant_contract(contract: dict[str, object]) -> dict[str, object]:
 
 
 def _mean_optional(values: list[object]) -> float | None:
-    present = [float(value) for value in values if value is not None and float(value) > 0]
+    present = [
+        parsed
+        for value in values
+        if (parsed := _finite_positive_float(value)) is not None and 0.02 <= parsed <= 3.0
+    ]
     return sum(present) / len(present) if present else None
 
 
 def _stored_market_price(contract: dict[str, object]) -> float | None:
-    bid = contract.get("bid")
-    ask = contract.get("ask")
-    if bid is not None and ask is not None and float(ask) >= float(bid) >= 0:
-        return (float(bid) + float(ask)) / 2
-    last_price = contract.get("last_price")
-    return float(last_price) if last_price is not None else None
+    bid = _finite_nonnegative_float(contract.get("bid"))
+    ask = _finite_nonnegative_float(contract.get("ask"))
+    if bid is not None and ask is not None and ask >= bid:
+        return (bid + ask) / 2
+    return _finite_nonnegative_float(contract.get("last_price"))
+
+
+def _finite_positive_float(value: object) -> float | None:
+    parsed = _finite_float(value)
+    return parsed if parsed is not None and parsed > 0 else None
+
+
+def _finite_nonnegative_float(value: object) -> float | None:
+    parsed = _finite_float(value)
+    return parsed if parsed is not None and parsed >= 0 else None
+
+
+def _finite_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isfinite(parsed) else None
 
 
 def build_background_job_response(job) -> BackgroundJobResponse:
@@ -1193,5 +1249,7 @@ def _portfolio_settings_response(settings: PortfolioSettings) -> PortfolioSettin
         risk_free_rate=settings.risk_free_rate,
         benchmark_symbols=settings.benchmark_symbols,
         cash_target_pct=settings.cash_target_pct,
+        risk_tolerance_score=settings.risk_tolerance_score,
+        bond_watchlist=settings.bond_watchlist,
         updated_at=settings.updated_at.isoformat(),
     )

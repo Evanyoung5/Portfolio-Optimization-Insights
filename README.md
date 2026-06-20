@@ -45,6 +45,23 @@ The compose stack includes:
 - Redis on `localhost:6379`
 - Background worker consuming Redis jobs
 
+For a production-style deployment with the reverse proxy, strict runtime validation, and container health checks:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+python3 scripts/prod_smoke_test.py --base-url http://localhost
+docker compose -f docker-compose.prod.yml exec api python -m app.ops.smtp_check
+```
+
+For a local production rehearsal with a mail sandbox, use the included local env file shape and Mailpit profile:
+
+```bash
+cp .env.prod.local.example .env.prod.local
+docker compose --env-file .env.prod.local -f docker-compose.prod.yml --profile local-drill up --build -d
+python3 scripts/prod_smoke_test.py --base-url https://localhost --allow-insecure-localhost
+docker compose --env-file .env.prod.local -f docker-compose.prod.yml exec api python -m app.ops.smtp_check --send-test --to you@example.com
+```
+
 Broker integrations are intentionally not implemented yet. The `app/connectors` package contains
 only placeholders so the integration boundary is explicit without connecting to any brokerage.
 
@@ -96,14 +113,17 @@ POST /auth/register
 }
 ```
 
-The response includes an access token and refresh token. Frontends should send the access token on private requests:
+The response includes an access token and refresh token for compatibility, and the API also sets same-origin `HttpOnly` auth cookies on register, login, and refresh. Public deployments should prefer the cookie session so browser JavaScript does not need to persist bearer tokens across reloads.
+
+If a custom client still sends bearer tokens explicitly, private requests accept:
 
 ```text
 Authorization: Bearer <access_token>
 ```
 
-Portfolio creation requires a bearer token. Reading, analyzing, adding lots, optimizing,
-uploading CSVs, refreshing market data, and simulating trades require the same owner token.
+Portfolio creation requires an authenticated session, either through the same-origin auth cookies
+or an explicit bearer token. Reading, analyzing, adding lots, optimizing, uploading CSVs,
+refreshing market data, and simulating trades require that same owner session.
 Refresh tokens are stored hashed, rotated through `POST /auth/refresh`, and revoked by logout or password reset.
 Password reset and email verification tokens are one-time hashed records. In production, keep
 `AUTH_DEV_EXPOSE_TOKENS=false` and configure `SMTP_HOST`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
@@ -140,6 +160,19 @@ Local development can still use inline behavior for manual lot entry. The Redis 
 important for longer-running tasks such as large CSV imports, cost-basis rebuilds, risk analysis
 refreshes, scheduled market-data updates, and anything the browser should not wait on.
 
+## Production Operations
+
+The repo includes lightweight deployment scripts:
+
+- `scripts/prod_backup.sh [backup_dir]` creates a Postgres dump and SHA-256 checksum. Set `INCLUDE_REDIS=true` to capture an optional Redis snapshot tarball.
+- `scripts/prod_restore.sh <dump_path>` restores Postgres from a dump. This requires `ALLOW_DROP=true` because it replaces the current database contents.
+- `TARGET_DATABASE=portfolio_restore_check scripts/prod_restore.sh <dump_path>` restores into an isolated verification database without touching the live one.
+- `scripts/prod_smoke_test.py --base-url https://your-domain` verifies `/health` and `/runtime`, and can also test login with `--email` and `--password`.
+- `docker compose -f docker-compose.prod.yml exec api python -m app.ops.smtp_check` verifies SMTP config and connectivity without sending mail.
+- `docker compose -f docker-compose.prod.yml exec api python -m app.ops.smtp_check --send-test --to you@example.com` sends a deployment-time test message.
+
+The production compose file now includes health checks for `api`, `worker`, `postgres`, and `redis`.
+
 ## Market Data
 
 Market data is behind `app/connectors/market_data` so yfinance is swappable later. The yfinance
@@ -152,20 +185,25 @@ GET /portfolios/{portfolio_id}/market-data
 ```
 
 Refresh requests are rate limited with Redis before a worker job is queued, and provider fetches
-are throttled inside the worker with a stable per-account yfinance signature. By default each
-account signature can call yfinance at most once per minute:
+are throttled inside the worker with both a stable per-account yfinance signature and a provider-wide
+budget. Larger ticker batches and option-suite refreshes spend more budget units than small quote
+refreshes, so one public user cannot monopolize yfinance capacity.
 
 - Per user per minute: `MARKET_DATA_USER_REFRESH_LIMIT_PER_MINUTE`
 - Per user per day: `MARKET_DATA_USER_REFRESH_LIMIT_PER_DAY`
 - Optional per portfolio queue cooldown: `MARKET_DATA_PORTFOLIO_REFRESH_MIN_SECONDS`
-- Per-account provider budget: `MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE` defaults to `1`
-- Set `MARKET_DATA_REQUIRE_REDIS_LIMITER=true` in production if refreshes should fail closed when Redis is unavailable
+- Per-account provider budget units: `MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE`
+- Global provider budget units: `MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE`
+- Batch weight: `MARKET_DATA_PROVIDER_TICKERS_PER_COST_UNIT`
+- Request caps: `MARKET_DATA_MAX_REFRESH_TICKERS`, `MARKET_DATA_MAX_HISTORY_TICKERS`, `MARKET_DATA_MAX_BENCHMARK_TICKERS`
+- Options caps: `OPTIONS_CHAIN_MAX_SURFACE_EXPIRIES`, `OPTIONS_HISTORY_ALLOWED_PERIODS`
+- Set `MARKET_DATA_REQUIRE_REDIS_LIMITER=true` in production so refreshes fail closed when Redis is unavailable
 
 Manual portfolio changes automatically queue a market-data refresh. The first uncached refresh for
-an account signature runs immediately; if that same account called yfinance in the past minute,
-the worker waits for that account's provider window to reopen before fetching. Other accounts use
-their own signatures and can continue processing. The heatmap `GET` endpoint uses cached quotes
-and never calls yfinance directly.
+an account signature runs immediately when both its account budget and the global provider budget
+have capacity. Other accounts use their own signatures, while the global budget prevents a public
+deployment from building an unlimited yfinance backlog. The heatmap `GET` endpoint uses cached
+quotes and never calls yfinance directly.
 
 ## Portfolio Heatmap
 
@@ -320,3 +358,5 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up --build 
 settings should include your real frontend origin, `APP_HOSTS`, `PUBLIC_APP_URL`, SMTP settings,
 long random `AUTH_SECRET_KEY` and `DATA_ENCRYPTION_KEY`, `AUTH_DEV_EXPOSE_TOKENS=false`, and
 database backups for the Postgres volume.
+
+For a fuller launch checklist, see [docs/PUBLIC_DEPLOYMENT.md](docs/PUBLIC_DEPLOYMENT.md).

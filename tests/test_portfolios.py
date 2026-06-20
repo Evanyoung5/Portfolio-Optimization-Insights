@@ -1,3 +1,6 @@
+from pathlib import Path
+
+
 def test_create_portfolio(client, auth_headers):
     response = client.post(
         "/api/v1/portfolios",
@@ -35,6 +38,7 @@ def test_upload_csv_and_analyze(client, auth_headers):
 
     assert response.status_code == 200
     assert response.json()["imported_positions"] == 2
+    assert response.json()["detected_format"] == "generic"
 
     analysis = client.get(f"/api/v1/portfolios/{portfolio['id']}/analysis", headers=auth_headers)
 
@@ -43,6 +47,34 @@ def test_upload_csv_and_analyze(client, auth_headers):
     assert payload["total_market_value"] == 1510
     assert payload["position_count"] == 2
     assert payload["asset_class_exposure"]["equity"] > payload["asset_class_exposure"]["bond"]
+
+
+def test_upload_fidelity_positions_export(client, auth_headers):
+    portfolio = client.post(
+        "/api/v1/portfolios",
+        headers=auth_headers,
+        json={
+            "name": "Fidelity Import",
+            "lots": [{"ticker": "OLD", "quantity": 3, "purchase_price": 10}],
+        },
+    ).json()
+    fixture = Path(__file__).parent / "fixtures" / "broker_csv" / "fidelity_positions.csv"
+
+    response = client.post(
+        f"/api/v1/portfolios/{portfolio['id']}/upload-csv",
+        headers=auth_headers,
+        files={"file": (fixture.name, fixture.read_bytes(), "text/csv")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["detected_format"] == "fidelity"
+    assert payload["imported_positions"] == 2
+    state = client.get(f"/api/v1/portfolios/{portfolio['id']}", headers=auth_headers).json()
+    apple = next(position for position in state["positions"] if position["ticker"] == "AAPL")
+    assert apple["cost_basis"] == 1500
+    assert apple["current_price"] == 210.25
+    assert {lot["ticker"] for lot in state["lots"]} == {"AAPL", "BND"}
 
 
 def test_optimize_portfolio(client, auth_headers):

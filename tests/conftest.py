@@ -13,6 +13,12 @@ from app.main import create_app
 def reset_repository() -> None:
     portfolio_repository.clear()
     try:
+        from app.auth import limiting as auth_limiting
+
+        auth_limiting._AUTH_LIMITER = None
+    except Exception:
+        pass
+    try:
         from app.background.queue import redis_client_from_env
 
         client = redis_client_from_env()

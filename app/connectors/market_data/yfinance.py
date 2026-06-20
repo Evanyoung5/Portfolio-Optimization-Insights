@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
+from math import isfinite
 from typing import Any
 
 from app.db.models import MarketQuote
@@ -546,7 +547,7 @@ def _optional_float(value: Any) -> float | None:
         parsed = float(value)
     except (TypeError, ValueError):
         return None
-    if parsed != parsed:
+    if not isfinite(parsed):
         return None
     return parsed
 

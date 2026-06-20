@@ -1,10 +1,8 @@
-import csv
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
-from io import StringIO
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import ValidationError
 
 from app.api.health import health_payload
@@ -17,6 +15,7 @@ from app.auth.security import (
     hash_token,
     verify_password,
 )
+from app.auth.limiting import enforce_auth_rate_limit
 from app.background.queue import enqueue_background_job_message
 from app.background.portfolio_tasks import (
     create_lots_from_aggregate_positions,
@@ -32,6 +31,10 @@ from app.background.portfolio_tasks import (
 from app.api.schemas import (
     AuthTokenResponse,
     BackgroundJobResponse,
+    BondAssetRefreshRequest,
+    BondAssetsResponse,
+    BondStrategyRequest,
+    BondStrategyResponse,
     CSVUploadResponse,
     CashTransactionInput,
     CashTransactionsResponse,
@@ -58,6 +61,9 @@ from app.api.schemas import (
     PortfolioResponse,
     PortfolioSettingsResponse,
     PortfolioSettingsUpdate,
+    RiskReweightRequest,
+    RiskReweightResponse,
+    RiskToleranceStateResponse,
     RefreshTokenRequest,
     PositionInput,
     PositionResponse,
@@ -89,25 +95,34 @@ from app.api.services import (
 )
 from app.connectors.market_data.limiter import RateLimitExceeded, enforce_market_data_refresh_limits
 from app.connectors.market_data.history import PriceHistoryBundle, get_cached_price_history, history_spec_for_range
+from app.connectors.market_data.policy import (
+    max_benchmark_tickers,
+    max_history_tickers,
+    max_refresh_tickers,
+    validate_options_history_period,
+    validate_options_surface_expiries,
+    validate_ticker_budget,
+)
 from app.connectors.market_data.service import get_cached_market_data_for_portfolio, portfolio_tickers
+from app.connectors.broker_csv import BrokerCSVError, parse_brokerage_csv
 from app.connectors.email import send_email_verification_email, send_password_reset_email
 from app.db.models import BackgroundJob, Portfolio, Position, User
 from app.db.repository import create_portfolio_repository
+from app.quant.bonds import BOND_ASSET_BY_TICKER, BOND_ASSET_CATALOG, analyze_bond_strategy, recommended_bond_rungs
 from app.quant.portfolio import analyze_portfolio, optimize_portfolio, simulate_trade_impact
+from app.quant.risk_profiles import estimate_portfolio_risk, reweight_portfolio_for_risk, risk_tolerance_profile
+from app.security import auth_cookie_domain, auth_cookie_samesite, auth_cookie_secure
 
 router = APIRouter()
 portfolio_repository = create_portfolio_repository()
+_ACCESS_COOKIE_NAME = "portfolio_access"
+_REFRESH_COOKIE_NAME = "portfolio_refresh"
 
 
-def _optional_current_user(authorization: str | None = Header(default=None)) -> User | None:
-    if not authorization:
+def _optional_current_user(request: Request, authorization: str | None = Header(default=None)) -> User | None:
+    token = _extract_access_token(request, authorization)
+    if not token:
         return None
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header must use a bearer token.",
-        )
     try:
         payload = decode_access_token(token)
     except AuthError as exc:
@@ -149,6 +164,26 @@ def _queue_market_data_refresh(
     latest = portfolio_repository.get(portfolio.id) or portfolio
     if not latest.positions:
         return None
+    try:
+        validate_ticker_budget(
+            portfolio_tickers(latest),
+            limit=max_refresh_tickers(),
+            label="market-data refresh",
+        )
+    except ValueError as exc:
+        if not automatic:
+            raise
+        job = portfolio_repository.enqueue_background_job(
+            latest.id,
+            "refresh_market_data",
+            message=str(exc),
+        )
+        return portfolio_repository.complete_background_job(
+            latest.id,
+            job.id,
+            status="failed",
+            message=str(exc),
+        )
 
     pending = _pending_market_data_refresh(latest)
     if pending is not None:
@@ -250,6 +285,17 @@ def _pending_market_data_refresh(portfolio: Portfolio) -> BackgroundJob | None:
     return sorted(pending, key=lambda job: (job.created_at, job.id))[-1]
 
 
+def _pending_bond_market_data_refresh(portfolio: Portfolio) -> BackgroundJob | None:
+    pending = [
+        job
+        for job in portfolio.background_jobs
+        if job.job_type == "refresh_bond_market_data" and job.status in {"pending", "running"}
+    ]
+    if not pending:
+        return None
+    return sorted(pending, key=lambda job: (job.created_at, job.id))[-1]
+
+
 def _queue_market_history_refresh(
     portfolio: Portfolio,
     *,
@@ -260,6 +306,7 @@ def _queue_market_history_refresh(
     normalized_tickers = _normalize_unique_symbols(tickers)
     if not normalized_tickers:
         return None
+    validate_ticker_budget(normalized_tickers, limit=max_history_tickers(), label="market-history refresh")
     latest = portfolio_repository.get(portfolio.id) or portfolio
     pending = _pending_market_history_refresh(latest)
     if pending is not None:
@@ -361,6 +408,60 @@ def _history_ranges_for_zoom(range_name: str) -> list[str]:
     return list(dict.fromkeys(companions.get(primary, [primary])))
 
 
+def _extract_access_token(request: Request, authorization: str | None) -> str | None:
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header must use a bearer token.",
+            )
+        return token
+    return request.cookies.get(_ACCESS_COOKIE_NAME)
+
+
+def _resolve_refresh_token(request: Request, payload: RefreshTokenRequest | LogoutRequest | None) -> str:
+    token = payload.refresh_token if payload is not None else None
+    token = (token or "").strip() or request.cookies.get(_REFRESH_COOKIE_NAME, "").strip()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is required.")
+    return token
+
+
+def _set_auth_cookies(response: Response, auth: AuthTokenResponse) -> None:
+    common = {
+        "httponly": True,
+        "secure": auth_cookie_secure(),
+        "samesite": auth_cookie_samesite(),
+        "path": "/",
+    }
+    domain = auth_cookie_domain()
+    if domain:
+        common["domain"] = domain
+
+    response.set_cookie(
+        key=_ACCESS_COOKIE_NAME,
+        value=auth.access_token,
+        max_age=_access_token_seconds(),
+        **common,
+    )
+    response.set_cookie(
+        key=_REFRESH_COOKIE_NAME,
+        value=auth.refresh_token,
+        max_age=_refresh_token_seconds(),
+        **common,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    params = {"path": "/"}
+    domain = auth_cookie_domain()
+    if domain:
+        params["domain"] = domain
+    response.delete_cookie(_ACCESS_COOKIE_NAME, **params)
+    response.delete_cookie(_REFRESH_COOKIE_NAME, **params)
+
+
 @router.get("/health", tags=["health"])
 def health_check() -> dict[str, str]:
     return health_payload()
@@ -372,51 +473,77 @@ def health_check() -> dict[str, str]:
     status_code=status.HTTP_201_CREATED,
     tags=["auth"],
 )
-def register_user(payload: UserRegisterRequest) -> AuthTokenResponse:
+def register_user(payload: UserRegisterRequest, request: Request, response: Response) -> AuthTokenResponse:
+    enforce_auth_rate_limit("register", request=request, email=payload.email)
+    try:
+        password_hash = hash_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     try:
         user = portfolio_repository.create_user(
             email=payload.email,
-            password_hash=hash_password(payload.password),
+            password_hash=password_hash,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return _auth_response(user)
+    auth = _auth_response(user)
+    _set_auth_cookies(response, auth)
+    return auth
 
 
 @router.post("/auth/login", response_model=AuthTokenResponse, tags=["auth"])
-def login_user(payload: UserLoginRequest) -> AuthTokenResponse:
+def login_user(payload: UserLoginRequest, request: Request, response: Response) -> AuthTokenResponse:
+    enforce_auth_rate_limit("login", request=request, email=payload.email)
     user = portfolio_repository.get_user_by_email(payload.email)
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
-    return _auth_response(user)
+    auth = _auth_response(user)
+    _set_auth_cookies(response, auth)
+    return auth
 
 
 @router.post("/auth/refresh", response_model=AuthTokenResponse, tags=["auth"])
-def refresh_auth_token(payload: RefreshTokenRequest) -> AuthTokenResponse:
-    record = _active_token_or_401(payload.refresh_token, "refresh")
+def refresh_auth_token(
+    request: Request,
+    response: Response,
+    payload: RefreshTokenRequest | None = None,
+) -> AuthTokenResponse:
+    enforce_auth_rate_limit("refresh", request=request)
+    refresh_token = _resolve_refresh_token(request, payload)
+    record = _active_token_or_401(refresh_token, "refresh")
     portfolio_repository.revoke_auth_token(record.id)
     user = portfolio_repository.get_user(record.user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists.")
-    return _auth_response(user)
+    auth = _auth_response(user)
+    _set_auth_cookies(response, auth)
+    return auth
 
 
 @router.post("/auth/logout", response_model=MessageResponse, tags=["auth"])
-def logout_user(payload: LogoutRequest) -> MessageResponse:
+def logout_user(
+    request: Request,
+    response: Response,
+    payload: LogoutRequest | None = None,
+) -> MessageResponse:
+    enforce_auth_rate_limit("logout", request=request)
+    refresh_token = _resolve_refresh_token(request, payload)
     record = portfolio_repository.get_auth_token(
-        token_hash=hash_token(payload.refresh_token),
+        token_hash=hash_token(refresh_token),
         token_type="refresh",
     )
     if record is not None and record.revoked_at is None:
         portfolio_repository.revoke_auth_token(record.id)
+    _clear_auth_cookies(response)
     return MessageResponse(message="Logged out.")
 
 
 @router.post("/auth/password-reset/request", response_model=TokenRequestResponse, tags=["auth"])
-def request_password_reset(payload: PasswordResetRequest) -> TokenRequestResponse:
+def request_password_reset(payload: PasswordResetRequest, request: Request) -> TokenRequestResponse:
+    enforce_auth_rate_limit("password_reset_request", request=request, email=payload.email)
     user = portfolio_repository.get_user_by_email(payload.email)
     dev_token = None
     if user is not None:
@@ -430,16 +557,22 @@ def request_password_reset(payload: PasswordResetRequest) -> TokenRequestRespons
 
 
 @router.post("/auth/password-reset/confirm", response_model=MessageResponse, tags=["auth"])
-def confirm_password_reset(payload: PasswordResetConfirmRequest) -> MessageResponse:
+def confirm_password_reset(payload: PasswordResetConfirmRequest, request: Request) -> MessageResponse:
+    enforce_auth_rate_limit("password_reset_confirm", request=request)
     record = _active_token_or_400(payload.token, "password_reset")
-    portfolio_repository.update_user_password(record.user_id, hash_password(payload.new_password))
+    try:
+        password_hash = hash_password(payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    portfolio_repository.update_user_password(record.user_id, password_hash)
     portfolio_repository.consume_auth_token(record.id)
     portfolio_repository.revoke_user_tokens(user_id=record.user_id, token_type="refresh")
     return MessageResponse(message="Password has been reset.")
 
 
 @router.post("/auth/email-verification/request", response_model=TokenRequestResponse, tags=["auth"])
-def request_email_verification(current_user: User = Depends(_current_user)) -> TokenRequestResponse:
+def request_email_verification(request: Request, current_user: User = Depends(_current_user)) -> TokenRequestResponse:
+    enforce_auth_rate_limit("email_verification_request", request=request, user_id=current_user.id)
     token = _create_auth_token(current_user.id, "email_verification", _email_verification_seconds())
     send_email_verification_email(to_email=current_user.email, token=token)
     return TokenRequestResponse(
@@ -449,7 +582,8 @@ def request_email_verification(current_user: User = Depends(_current_user)) -> T
 
 
 @router.post("/auth/email-verification/confirm", response_model=UserResponse, tags=["auth"])
-def confirm_email_verification(payload: EmailVerificationRequest) -> UserResponse:
+def confirm_email_verification(payload: EmailVerificationRequest, request: Request) -> UserResponse:
+    enforce_auth_rate_limit("email_verification_confirm", request=request)
     record = _active_token_or_400(payload.token, "email_verification")
     user = portfolio_repository.mark_user_email_verified(record.user_id)
     portfolio_repository.consume_auth_token(record.id)
@@ -541,35 +675,49 @@ async def upload_positions_csv(
     current_user: User = Depends(_current_user),
 ) -> CSVUploadResponse:
     portfolio = _get_portfolio_or_404(portfolio_id, current_user)
-    raw_content = await file.read()
-
-    try:
-        decoded = raw_content.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
+    raw_content = await file.read(5_000_001)
+    if len(raw_content) > 5_000_000:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CSV must be UTF-8 encoded.",
-        ) from exc
-
-    positions, warnings = _parse_positions_csv(decoded)
-    if not positions:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CSV did not contain any valid positions.",
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="CSV uploads are limited to 5 MB.",
         )
 
-    updated = portfolio_repository.replace_positions(portfolio.id, positions)
+    decoded = None
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            decoded = raw_content.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if decoded is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV must use UTF-8 or Windows-1252 text encoding.")
+
+    try:
+        imported = parse_brokerage_csv(decoded)
+    except BrokerCSVError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not imported.positions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSV did not contain any supported open positions. Review the export type and imported warnings.",
+        )
+
+    imported_lots = create_lots_from_aggregate_positions(imported.positions)
+    portfolio_repository.replace_lots(portfolio.id, imported_lots)
+    updated = rebuild_portfolio_positions(portfolio_repository, portfolio.id)
     create_valuation_snapshot(
         portfolio_repository,
         portfolio.id,
-        metadata={"event": "csv_positions_uploaded", "positions": len(positions)},
+        metadata={"event": "csv_positions_uploaded", "positions": len(imported.positions), "source": imported.source},
     )
     _queue_automatic_market_data_refresh(updated)
     return CSVUploadResponse(
         portfolio_id=updated.id,
-        imported_positions=len(positions),
+        imported_positions=len(imported.positions),
         total_market_value=sum(position.market_value for position in updated.positions),
-        warnings=warnings,
+        detected_format=imported.source,
+        rows_read=imported.rows_read,
+        warnings=imported.warnings,
     )
 
 
@@ -774,6 +922,184 @@ def patch_portfolio_settings(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+@router.get(
+    "/portfolios/{portfolio_id}/risk-tolerance",
+    response_model=RiskToleranceStateResponse,
+    tags=["risk"],
+)
+def get_portfolio_risk_tolerance(
+    portfolio_id: str,
+    current_user: User = Depends(_current_user),
+) -> dict[str, object]:
+    portfolio = _get_portfolio_or_404(portfolio_id, current_user)
+    settings = portfolio_repository.get_portfolio_settings(portfolio.id)
+    return {
+        "portfolio_id": portfolio.id,
+        "profile": risk_tolerance_profile(settings.risk_tolerance_score),
+        "current_model": estimate_portfolio_risk(portfolio),
+    }
+
+
+@router.post(
+    "/portfolios/{portfolio_id}/risk-tolerance/reweight",
+    response_model=RiskReweightResponse,
+    tags=["risk", "optimization"],
+)
+def reweight_portfolio_for_risk_endpoint(
+    portfolio_id: str,
+    payload: RiskReweightRequest,
+    current_user: User = Depends(_current_user),
+) -> dict[str, object]:
+    portfolio = _get_portfolio_or_404(portfolio_id, current_user)
+    settings = portfolio_repository.get_portfolio_settings(portfolio.id)
+    score = payload.risk_score or settings.risk_tolerance_score
+    invalid = [symbol for symbol in payload.bond_symbols if symbol not in BOND_ASSET_BY_TICKER]
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported bond asset(s): {', '.join(invalid)}.",
+        )
+    quotes = portfolio_repository.get_market_quotes(payload.bond_symbols, max_age_seconds=None)
+    quote_prices = {quote.ticker: quote.price for quote in quotes}
+    try:
+        return reweight_portfolio_for_risk(
+            portfolio,
+            risk_score=score,
+            bond_symbols=payload.bond_symbols,
+            quote_prices=quote_prices,
+            max_position_weight=payload.max_position_weight,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get(
+    "/portfolios/{portfolio_id}/bond-assets",
+    response_model=BondAssetsResponse,
+    tags=["market-data", "bonds"],
+)
+def get_portfolio_bond_assets(
+    portfolio_id: str,
+    current_user: User = Depends(_current_user),
+) -> dict[str, object]:
+    portfolio = _get_portfolio_or_404(portfolio_id, current_user)
+    settings = portfolio_repository.get_portfolio_settings(portfolio.id)
+    catalog_tickers = [item["ticker"] for item in BOND_ASSET_CATALOG]
+    quotes = portfolio_repository.get_market_quotes(catalog_tickers, max_age_seconds=None)
+    quotes_by_ticker = {quote.ticker: quote for quote in quotes}
+    watchlist = set(settings.bond_watchlist)
+    assets: list[dict[str, object]] = []
+    for item in BOND_ASSET_CATALOG:
+        quote = quotes_by_ticker.get(item["ticker"])
+        assets.append(
+            {
+                **item,
+                "monitored": item["ticker"] in watchlist,
+                "price": quote.price if quote else None,
+                "previous_close": quote.previous_close if quote else None,
+                "daily_return_pct": quote.daily_return_pct if quote else None,
+                "fetched_at": quote.fetched_at.isoformat() if quote else None,
+            }
+        )
+    return {
+        "portfolio_id": portfolio.id,
+        "assets": assets,
+        "missing_tickers": [ticker for ticker in catalog_tickers if ticker not in quotes_by_ticker],
+        "recommended_ladder": recommended_bond_rungs(settings.risk_tolerance_score, "ladder"),
+        "recommended_barbell": recommended_bond_rungs(settings.risk_tolerance_score, "barbell"),
+        "note": (
+            "Prices are cached exchange prices for bond ETFs, not executable quotes for individual bonds. "
+            "ETF shares do not promise a fixed maturity value."
+        ),
+    }
+
+
+@router.post(
+    "/portfolios/{portfolio_id}/bond-assets/refresh",
+    response_model=BackgroundJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["market-data", "bonds"],
+)
+def enqueue_bond_asset_refresh_job(
+    portfolio_id: str,
+    payload: BondAssetRefreshRequest,
+    current_user: User = Depends(_current_user),
+) -> BackgroundJobResponse:
+    portfolio = _get_portfolio_or_404(portfolio_id, current_user)
+    settings = portfolio_repository.get_portfolio_settings(portfolio.id)
+    requested = payload.tickers or settings.bond_watchlist or [item["ticker"] for item in BOND_ASSET_CATALOG]
+    tickers = _normalize_unique_symbols(requested)
+    invalid = [symbol for symbol in tickers if symbol not in BOND_ASSET_BY_TICKER]
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported bond asset(s): {', '.join(invalid)}.",
+        )
+    validate_ticker_budget(tickers, limit=12, label="bond-price refresh")
+    existing = _pending_bond_market_data_refresh(portfolio)
+    if existing is not None:
+        return build_background_job_response(existing)
+    try:
+        _enforce_market_data_refresh_limits(user_id=current_user.id, portfolio_id=portfolio.id)
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+
+    job = portfolio_repository.enqueue_background_job(
+        portfolio.id,
+        "refresh_bond_market_data",
+        message=f"Queued cached bond prices for {len(tickers)} public asset(s).",
+    )
+    try:
+        enqueue_background_job_message(
+            job,
+            payload={
+                "tickers": tickers,
+                "force": True,
+                "defer_on_rate_limit": True,
+                "provider_signature": _market_data_account_signature(current_user.id),
+            },
+        )
+    except Exception as exc:
+        portfolio_repository.complete_background_job(
+            portfolio.id,
+            job.id,
+            status="failed",
+            message=f"Could not enqueue Redis worker job: {exc}",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Background worker queue is unavailable.",
+        ) from exc
+    return build_background_job_response(job)
+
+
+@router.post(
+    "/portfolios/{portfolio_id}/bond-strategies/analyze",
+    response_model=BondStrategyResponse,
+    tags=["bonds"],
+)
+def analyze_portfolio_bond_strategy(
+    portfolio_id: str,
+    payload: BondStrategyRequest,
+    current_user: User = Depends(_current_user),
+) -> dict[str, object]:
+    portfolio = _get_portfolio_or_404(portfolio_id, current_user)
+    settings = portfolio_repository.get_portfolio_settings(portfolio.id)
+    try:
+        return analyze_bond_strategy(
+            strategy_type=payload.strategy_type,
+            capital=payload.capital,
+            risk_score=payload.risk_score or settings.risk_tolerance_score,
+            rungs=[rung.model_dump(exclude_none=True) for rung in payload.rungs],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.post(
     "/portfolios/{portfolio_id}/jobs/rebuild-positions",
     response_model=BackgroundJobResponse,
@@ -837,8 +1163,16 @@ def get_portfolio_performance_history(
     current_user: User = Depends(_current_user),
 ) -> PortfolioPerformanceHistoryResponse:
     portfolio = _get_portfolio_or_404(portfolio_id, current_user)
-    benchmarks = _parse_symbol_csv(benchmark_symbols) or _portfolio_benchmark_tickers(portfolio)
-    tickers = _portfolio_history_tickers(portfolio, benchmarks)
+    try:
+        benchmarks = _parse_symbol_csv(benchmark_symbols, limit=max_benchmark_tickers()) or _portfolio_benchmark_tickers(portfolio)
+        validate_ticker_budget(benchmarks, limit=max_benchmark_tickers(), label="benchmark comparison")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    tickers = _portfolio_history_tickers(portfolio, benchmarks, portfolio_repository)
+    try:
+        validate_ticker_budget(tickers, limit=max_history_tickers(), label="performance-history request")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     spec = history_spec_for_range(range_name)
     try:
         bundle = get_cached_price_history(tickers, range_name=spec.range_name)
@@ -852,12 +1186,15 @@ def get_portfolio_performance_history(
         )
     queued_job = None
     if bundle.missing_tickers:
-        queued_job = _queue_market_history_refresh(
-            portfolio,
-            range_name=bundle.range_name,
-            tickers=tickers,
-            raise_on_queue_error=False,
-        )
+        try:
+            queued_job = _queue_market_history_refresh(
+                portfolio,
+                range_name=bundle.range_name,
+                tickers=tickers,
+                raise_on_queue_error=False,
+            )
+        except ValueError:
+            queued_job = None
     return build_performance_history_response(
         portfolio,
         bundle,
@@ -880,12 +1217,15 @@ def enqueue_market_data_refresh_job(
     existing = _pending_market_data_refresh(portfolio)
     if existing is not None:
         if existing.status == "pending":
-            job = _queue_market_data_refresh(
-                portfolio,
-                force=True,
-                automatic=False,
-                raise_on_queue_error=True,
-            )
+            try:
+                job = _queue_market_data_refresh(
+                    portfolio,
+                    force=True,
+                    automatic=False,
+                    raise_on_queue_error=True,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
             if job is None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Portfolio has no tickers to refresh.")
             return build_background_job_response(job)
@@ -900,12 +1240,15 @@ def enqueue_market_data_refresh_job(
             headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
 
-    job = _queue_market_data_refresh(
-        portfolio,
-        force=True,
-        automatic=False,
-        raise_on_queue_error=True,
-    )
+    try:
+        job = _queue_market_data_refresh(
+            portfolio,
+            force=True,
+            automatic=False,
+            raise_on_queue_error=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if job is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Portfolio has no tickers to refresh.")
     return build_background_job_response(job)
@@ -938,6 +1281,8 @@ def get_portfolio_relativistic_bs(
     quotes = get_cached_market_data_for_portfolio(portfolio, portfolio_repository)
     model_tau = _relativistic_bs_tau(expiry_date, tau)
     try:
+        bounded_surface_expiries = validate_options_surface_expiries(surface_expiries)
+        bounded_history_period = validate_options_history_period(history_period)
         return build_relativistic_bs_analysis(
             portfolio,
             symbol=symbol,
@@ -953,8 +1298,8 @@ def get_portfolio_relativistic_bs(
             cached_quotes=quotes,
             use_market_chain=use_market_chain,
             provider_signature=f"account-{hash_token(f'options:{current_user.id}')[:24]}",
-            surface_expiries=surface_expiries,
-            history_period=history_period,
+            surface_expiries=bounded_surface_expiries,
+            history_period=bounded_history_period,
             snapshot_repository=portfolio_repository,
             force_market_chain=force_market_chain,
         )
@@ -1135,14 +1480,24 @@ def _portfolio_benchmark_tickers(portfolio: Portfolio) -> list[str]:
         return []
 
 
-def _portfolio_history_tickers(portfolio: Portfolio, benchmark_symbols: list[str]) -> list[str]:
-    return _normalize_unique_symbols(portfolio_tickers(portfolio) + list(benchmark_symbols))
+def _portfolio_history_tickers(portfolio: Portfolio, benchmark_symbols: list[str], repository=None) -> list[str]:
+    symbols = portfolio_tickers(portfolio)
+    symbols.extend(lot.symbol for lot in portfolio.lots)
+    if repository is not None:
+        try:
+            symbols.extend(trade.symbol for trade in repository.list_trade_transactions(portfolio.id))
+        except Exception:
+            pass
+    return _normalize_unique_symbols(symbols + list(benchmark_symbols))
 
 
-def _parse_symbol_csv(value: str | None) -> list[str]:
+def _parse_symbol_csv(value: str | None, *, limit: int | None = None) -> list[str]:
     if not value:
         return []
-    return _normalize_unique_symbols([item for item in value.split(",")])
+    symbols = _normalize_unique_symbols([item for item in value.split(",")])
+    if limit is not None:
+        validate_ticker_budget(symbols, limit=limit, label="benchmark comparison")
+    return symbols
 
 
 def _serialize_user(user: User) -> UserResponse:
@@ -1250,54 +1605,6 @@ def _serialize_portfolio(portfolio: Portfolio) -> PortfolioResponse:
         created_at=portfolio.created_at.isoformat(),
         updated_at=portfolio.updated_at.isoformat(),
     )
-
-
-def _parse_positions_csv(decoded: str) -> tuple[list[Position], list[str]]:
-    reader = csv.DictReader(StringIO(decoded))
-    if reader.fieldnames is None:
-        return [], ["CSV is missing a header row."]
-
-    fieldnames = {field.strip().lower(): field for field in reader.fieldnames if field}
-    symbol_field = fieldnames.get("symbol") or fieldnames.get("ticker")
-    quantity_field = fieldnames.get("quantity") or fieldnames.get("shares")
-    price_field = fieldnames.get("price") or fieldnames.get("current_price")
-    missing = [
-        label
-        for label, field in (
-            ("symbol", symbol_field),
-            ("quantity", quantity_field),
-            ("price", price_field),
-        )
-        if field is None
-    ]
-    if missing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"CSV is missing required column(s): {', '.join(missing)}.")
-
-    positions: list[Position] = []
-    warnings: list[str] = []
-    for line_number, row in enumerate(reader, start=2):
-        try:
-            symbol = str(row.get(symbol_field, "")).strip().upper()
-            quantity = float(row.get(quantity_field, "") or 0)
-            price = float(row.get(price_field, "") or 0)
-            asset_class = str(row.get(fieldnames.get("asset_class", ""), "equity") or "equity").strip().lower()
-            if not symbol or quantity <= 0 or price <= 0:
-                raise ValueError("symbol, quantity, and price must be positive/present")
-            positions.append(
-                Position(
-                    symbol=symbol,
-                    quantity=quantity,
-                    price=price,
-                    asset_class=asset_class,
-                    cost_basis=quantity * price,
-                    average_cost=price,
-                    unrealized_gain_loss=0,
-                    lots_count=1,
-                )
-            )
-        except (TypeError, ValueError) as exc:
-            warnings.append(f"Line {line_number} skipped: {exc}.")
-    return positions, warnings
 
 
 public_router = APIRouter()

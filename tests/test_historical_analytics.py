@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from math import isfinite
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,47 @@ def test_portfolio_history_does_not_double_count_lot_created_by_manual_trade():
 
     assert response.coverage.quality == "complete_ledger"
     assert [point.value for point in response.portfolio_series] == pytest.approx([100, 101])
+
+
+def test_portfolio_history_follows_manual_sells_and_buys_for_existing_ticker():
+    repository = InMemoryPortfolioRepository()
+    portfolio = repository.create(name="Same Ticker Trades", base_currency="USD", cash=0, positions=[])
+    portfolio = record_cash_transaction(
+        repository,
+        portfolio.id,
+        {"transaction_type": "deposit", "amount": 1000, "occurred_at": "2024-01-01T00:00:00Z"},
+    )
+    portfolio = record_manual_trade(
+        repository,
+        portfolio.id,
+        {"ticker": "AAPL", "side": "buy", "quantity": 2, "price": 100, "occurred_at": "2024-01-02T00:00:00Z"},
+    )
+    portfolio = record_manual_trade(
+        repository,
+        portfolio.id,
+        {"ticker": "AAPL", "side": "sell", "quantity": 1, "price": 120, "occurred_at": "2024-01-04T00:00:00Z"},
+    )
+    portfolio = record_manual_trade(
+        repository,
+        portfolio.id,
+        {"ticker": "AAPL", "side": "buy", "quantity": 1, "price": 130, "occurred_at": "2024-01-05T00:00:00Z"},
+    )
+    bundle = _history_bundle(
+        "AAPL",
+        [
+            (datetime(2024, 1, 2, tzinfo=timezone.utc), 100),
+            (datetime(2024, 1, 3, tzinfo=timezone.utc), 110),
+            (datetime(2024, 1, 4, tzinfo=timezone.utc), 120),
+            (datetime(2024, 1, 5, tzinfo=timezone.utc), 130),
+            (datetime(2024, 1, 6, tzinfo=timezone.utc), 140),
+        ],
+    )
+
+    response = build_performance_history_response(portfolio, bundle, repository=repository)
+
+    assert response.coverage.quality == "complete_ledger"
+    assert [point.value for point in response.portfolio_series] == pytest.approx([100, 102, 104, 105, 107])
+    assert response.portfolio_series[-1].value > response.portfolio_series[0].value
 
 
 def test_portfolio_history_exposes_partial_market_data_without_fabricated_prices():
@@ -248,3 +290,55 @@ def test_option_history_limits_raw_resolution_for_long_lookback():
     assert response.points[0].atm_iv == pytest.approx(0.26)
     assert response.points[0].total_volume == pytest.approx(15)
     assert response.points[0].atm_market_price == pytest.approx(5)
+
+
+def test_option_history_ignores_nonfinite_provider_values_and_explains_single_capture():
+    repository = InMemoryPortfolioRepository()
+    portfolio = repository.create(name="Options", base_currency="USD", cash=0, positions=[])
+    fetched_at = datetime.now(timezone.utc)
+    expiry = fetched_at.date() + timedelta(days=30)
+    record = OptionChainHistorySnapshot(
+        id="nonfinite",
+        ticker="AAPL",
+        provider="test",
+        expiry=expiry,
+        fetched_at=fetched_at,
+        snapshot_hash="nonfinite",
+        payload={
+            "spot": 100,
+            "chain": {
+                "calls": [
+                    {
+                        "strike": 100,
+                        "bid": "NaN",
+                        "ask": "Infinity",
+                        "last_price": "Infinity",
+                        "implied_volatility": "Infinity",
+                        "volume": "NaN",
+                        "open_interest": "Infinity",
+                    }
+                ],
+                "puts": [{"strike": 100, "bid": 3, "ask": 5, "implied_volatility": 0.27, "volume": 5, "open_interest": 30}],
+            },
+        },
+    )
+
+    response = build_relativistic_bs_history_response(
+        portfolio,
+        [record],
+        symbol="AAPL",
+        expiry_date=expiry,
+        requested_resolution="auto",
+        lookback_days=30,
+        rate=0.05,
+        sigma=0.2,
+        c_m=2.5,
+    )
+
+    point = response.points[0]
+    assert point.atm_iv == pytest.approx(0.27)
+    assert point.atm_market_price is None
+    assert point.total_volume == pytest.approx(5)
+    assert isfinite(point.total_gamma_exposure)
+    assert isfinite(point.atm_bs_price)
+    assert "One saved capture is available" in response.note

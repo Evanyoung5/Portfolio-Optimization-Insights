@@ -12,7 +12,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   migrate:
     build: .
@@ -23,12 +24,14 @@ services:
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   api:
     build: .
     restart: unless-stopped
     environment:
+      APP_ENV: production
       DATABASE_URL: postgresql://portfolio:${POSTGRES_PASSWORD}@postgres:5432/portfolio
       REDIS_URL: redis://redis:6379/0
       PORTFOLIO_REPOSITORY: postgres
@@ -37,6 +40,9 @@ services:
       ENABLE_HSTS: "true"
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
       AUTH_DEV_EXPOSE_TOKENS: "false"
       PUBLIC_APP_URL: ${PUBLIC_APP_URL}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -45,22 +51,40 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      AUTH_REQUIRE_REDIS_LIMITER: "true"
       MARKET_DATA_CACHE_TTL_SECONDS: ${MARKET_DATA_CACHE_TTL_SECONDS:-900}
       MARKET_DATA_USER_REFRESH_LIMIT_PER_MINUTE: ${MARKET_DATA_USER_REFRESH_LIMIT_PER_MINUTE:-5}
       MARKET_DATA_USER_REFRESH_LIMIT_PER_DAY: ${MARKET_DATA_USER_REFRESH_LIMIT_PER_DAY:-100}
       MARKET_DATA_PORTFOLIO_REFRESH_MIN_SECONDS: ${MARKET_DATA_PORTFOLIO_REFRESH_MIN_SECONDS:-300}
-      MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE:-30}
+      MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE:-10}
+      MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE:-60}
+      MARKET_DATA_PROVIDER_TICKERS_PER_COST_UNIT: ${MARKET_DATA_PROVIDER_TICKERS_PER_COST_UNIT:-5}
+      MARKET_DATA_REQUIRE_REDIS_LIMITER: "true"
+      MARKET_DATA_MAX_REFRESH_TICKERS: ${MARKET_DATA_MAX_REFRESH_TICKERS:-50}
+      MARKET_DATA_MAX_HISTORY_TICKERS: ${MARKET_DATA_MAX_HISTORY_TICKERS:-40}
+      MARKET_DATA_MAX_BENCHMARK_TICKERS: ${MARKET_DATA_MAX_BENCHMARK_TICKERS:-8}
+      OPTIONS_CHAIN_MAX_SURFACE_EXPIRIES: ${OPTIONS_CHAIN_MAX_SURFACE_EXPIRIES:-4}
+      OPTIONS_CHAIN_PROVIDER_COST: ${OPTIONS_CHAIN_PROVIDER_COST:-2}
+      OPTIONS_SUITE_PROVIDER_BASE_COST: ${OPTIONS_SUITE_PROVIDER_BASE_COST:-2}
+      OPTIONS_HISTORY_ALLOWED_PERIODS: ${OPTIONS_HISTORY_ALLOWED_PERIODS:-1mo,3mo,6mo,1y,2y,5y}
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.ops.healthcheck", "api"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   worker:
     build: .
     restart: unless-stopped
     command: ["python", "-m", "app.background.worker"]
     environment:
+      APP_ENV: production
       DATABASE_URL: postgresql://portfolio:${POSTGRES_PASSWORD}@postgres:5432/portfolio
       REDIS_URL: redis://redis:6379/0
       PORTFOLIO_REPOSITORY: postgres
@@ -68,12 +92,28 @@ services:
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       BACKGROUND_QUEUE_NAME: portfolio-jobs
       MARKET_DATA_CACHE_TTL_SECONDS: ${MARKET_DATA_CACHE_TTL_SECONDS:-900}
-      MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE:-30}
+      MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_FETCH_LIMIT_PER_MINUTE:-10}
+      MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE: ${MARKET_DATA_PROVIDER_GLOBAL_FETCH_LIMIT_PER_MINUTE:-60}
+      MARKET_DATA_PROVIDER_TICKERS_PER_COST_UNIT: ${MARKET_DATA_PROVIDER_TICKERS_PER_COST_UNIT:-5}
+      MARKET_DATA_REQUIRE_REDIS_LIMITER: "true"
+      MARKET_DATA_MAX_REFRESH_TICKERS: ${MARKET_DATA_MAX_REFRESH_TICKERS:-50}
+      MARKET_DATA_MAX_HISTORY_TICKERS: ${MARKET_DATA_MAX_HISTORY_TICKERS:-40}
+      MARKET_DATA_MAX_BENCHMARK_TICKERS: ${MARKET_DATA_MAX_BENCHMARK_TICKERS:-8}
+      OPTIONS_CHAIN_MAX_SURFACE_EXPIRIES: ${OPTIONS_CHAIN_MAX_SURFACE_EXPIRIES:-4}
+      OPTIONS_CHAIN_PROVIDER_COST: ${OPTIONS_CHAIN_PROVIDER_COST:-2}
+      OPTIONS_SUITE_PROVIDER_BASE_COST: ${OPTIONS_SUITE_PROVIDER_BASE_COST:-2}
+      OPTIONS_HISTORY_ALLOWED_PERIODS: ${OPTIONS_HISTORY_ALLOWED_PERIODS:-1mo,3mo,6mo,1y,2y,5y}
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.ops.healthcheck", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   postgres:
     image: postgres:16-alpine
@@ -84,6 +124,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -91,6 +137,25 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  mailpit:
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    profiles: ["local-drill"]
+    ports:
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8025/api/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
 volumes:
   postgres_data:

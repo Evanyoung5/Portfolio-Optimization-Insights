@@ -6,6 +6,7 @@ from app.quant.rmt import (
     compute_returns,
     covariance_from_clean_correlation,
     marchenko_pastur_bounds,
+    pairwise_observation_counts,
     sample_correlation,
     sample_covariance,
 )
@@ -62,6 +63,20 @@ def test_sample_covariance_returns_zeros_for_too_few_observations():
 
     assert covariance.shape == (3, 3)
     assert np.array_equal(covariance, np.zeros((3, 3)))
+
+
+def test_pairwise_observation_counts_tracks_finite_samples():
+    counts = pairwise_observation_counts(
+        np.array(
+            [
+                [0.01, 0.02],
+                [np.nan, 0.03],
+                [0.02, np.nan],
+            ]
+        )
+    )
+
+    assert np.array_equal(counts, np.array([[2, 1], [1, 2]]))
 
 
 def test_sample_correlation_is_finite_symmetric_and_unit_diagonal():
