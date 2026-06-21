@@ -108,7 +108,15 @@ from app.connectors.broker_csv import BrokerCSVError, parse_brokerage_csv
 from app.connectors.email import send_email_verification_email, send_password_reset_email
 from app.db.models import BackgroundJob, Portfolio, Position, User
 from app.db.repository import create_portfolio_repository
-from app.quant.bonds import BOND_ASSET_BY_TICKER, BOND_ASSET_CATALOG, analyze_bond_strategy, recommended_bond_rungs
+from app.quant.bonds import (
+    BOND_ASSET_BY_TICKER,
+    BOND_ASSET_CATALOG,
+    BOND_RECOMMENDATION_NOTE,
+    BOND_SUPPORTED_QUOTE_TICKERS,
+    BOND_SUPPORTED_QUOTE_TICKERS_SET,
+    analyze_bond_strategy,
+    recommended_bond_rungs,
+)
 from app.quant.portfolio import analyze_portfolio, optimize_portfolio, simulate_trade_impact
 from app.quant.risk_profiles import estimate_portfolio_risk, reweight_portfolio_for_risk, risk_tolerance_profile
 from app.security import auth_cookie_domain, auth_cookie_samesite, auth_cookie_secure
@@ -985,7 +993,7 @@ def get_portfolio_bond_assets(
     portfolio = _get_portfolio_or_404(portfolio_id, current_user)
     settings = portfolio_repository.get_portfolio_settings(portfolio.id)
     catalog_tickers = [item["ticker"] for item in BOND_ASSET_CATALOG]
-    quotes = portfolio_repository.get_market_quotes(catalog_tickers, max_age_seconds=None)
+    quotes = portfolio_repository.get_market_quotes(BOND_SUPPORTED_QUOTE_TICKERS, max_age_seconds=None)
     quotes_by_ticker = {quote.ticker: quote for quote in quotes}
     watchlist = set(settings.bond_watchlist)
     assets: list[dict[str, object]] = []
@@ -1004,13 +1012,14 @@ def get_portfolio_bond_assets(
     return {
         "portfolio_id": portfolio.id,
         "assets": assets,
-        "missing_tickers": [ticker for ticker in catalog_tickers if ticker not in quotes_by_ticker],
-        "recommended_ladder": recommended_bond_rungs(settings.risk_tolerance_score, "ladder"),
-        "recommended_barbell": recommended_bond_rungs(settings.risk_tolerance_score, "barbell"),
+        "missing_tickers": [ticker for ticker in BOND_SUPPORTED_QUOTE_TICKERS if ticker not in quotes_by_ticker],
+        "recommended_ladder": recommended_bond_rungs(settings.risk_tolerance_score, "ladder", quotes_by_ticker),
+        "recommended_barbell": recommended_bond_rungs(settings.risk_tolerance_score, "barbell", quotes_by_ticker),
         "note": (
             "Prices are cached exchange prices for bond ETFs, not executable quotes for individual bonds. "
             "ETF shares do not promise a fixed maturity value."
         ),
+        "recommendation_note": BOND_RECOMMENDATION_NOTE,
     }
 
 
@@ -1028,14 +1037,15 @@ def enqueue_bond_asset_refresh_job(
     portfolio = _get_portfolio_or_404(portfolio_id, current_user)
     settings = portfolio_repository.get_portfolio_settings(portfolio.id)
     requested = payload.tickers or settings.bond_watchlist or [item["ticker"] for item in BOND_ASSET_CATALOG]
+    requested = [*requested, *BOND_SUPPORTED_QUOTE_TICKERS]
     tickers = _normalize_unique_symbols(requested)
-    invalid = [symbol for symbol in tickers if symbol not in BOND_ASSET_BY_TICKER]
+    invalid = [symbol for symbol in tickers if symbol not in BOND_SUPPORTED_QUOTE_TICKERS_SET]
     if invalid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported bond asset(s): {', '.join(invalid)}.",
         )
-    validate_ticker_budget(tickers, limit=12, label="bond-price refresh")
+    validate_ticker_budget(tickers, limit=len(BOND_SUPPORTED_QUOTE_TICKERS), label="bond-price refresh")
     existing = _pending_bond_market_data_refresh(portfolio)
     if existing is not None:
         return build_background_job_response(existing)

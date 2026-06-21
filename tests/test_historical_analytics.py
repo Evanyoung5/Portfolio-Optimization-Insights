@@ -24,6 +24,7 @@ from app.connectors.market_data.yfinance import (
     PriceHistorySnapshot,
 )
 from app.db.models import OptionChainHistorySnapshot
+from app.db.models import Position
 from app.db.repository import InMemoryPortfolioRepository
 
 
@@ -168,6 +169,42 @@ def test_portfolio_history_exposes_partial_market_data_without_fabricated_prices
     assert response.portfolio_series == []
     assert response.coverage.quality == "unavailable"
     assert response.coverage.partial_history is True
+
+
+def test_portfolio_history_backfills_undated_import_snapshot_and_flags_estimate():
+    repository = InMemoryPortfolioRepository()
+    portfolio = repository.create(
+        name="Imported Snapshot",
+        base_currency="USD",
+        cash=0,
+        positions=[
+            Position(
+                symbol="AAPL",
+                quantity=2,
+                price=120,
+                asset_class="equity",
+                cost_basis=200,
+                average_cost=100,
+            )
+        ],
+        lots=[],
+    )
+    bundle = _history_bundle(
+        "AAPL",
+        [
+            (datetime(2024, 1, 1, tzinfo=timezone.utc), 100),
+            (datetime(2024, 1, 2, tzinfo=timezone.utc), 110),
+            (datetime(2024, 1, 3, tzinfo=timezone.utc), 120),
+        ],
+    )
+
+    response = build_performance_history_response(portfolio, bundle, repository=repository)
+
+    assert response.coverage.quality == "estimated_opening_snapshot"
+    assert response.coverage.partial_history is True
+    assert response.coverage.effective_start.startswith("2024-01-01")
+    assert "without lot dates" in response.coverage.note
+    assert [point.value for point in response.portfolio_series] == pytest.approx([100, 110, 120])
 
 
 def test_option_snapshot_repository_deduplicates_and_purges_old_records():

@@ -10,6 +10,11 @@ def test_risk_profiles_have_complete_allocations_and_increasing_volatility():
         profile = risk_tolerance_profile(score)
         assert sum(profile["target_allocation"].values()) == pytest.approx(1.0)
         assert profile["target_volatility"] > prior_volatility
+        assert profile["volatility_band"]["min_volatility"] <= profile["target_volatility"]
+        upper = profile["volatility_band"]["max_volatility"]
+        assert upper is None or profile["target_volatility"] <= upper
+        assert profile["volatility_band"]["display_range"]
+        assert profile["volatility_band"]["narrative"]
         prior_volatility = profile["target_volatility"]
 
 
@@ -51,4 +56,5 @@ def test_estimated_portfolio_risk_recognizes_bond_etf_symbols():
 
     assert model["asset_class_allocation"]["bonds"] == pytest.approx(1.0)
     assert model["model_volatility"] > 0.10
-
+    assert model["estimated_label"]
+    assert model["volatility_band"]["display_range"]

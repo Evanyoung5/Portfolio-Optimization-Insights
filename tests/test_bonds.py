@@ -1,5 +1,6 @@
 import pytest
 
+from app.db.models import MarketQuote
 from app.quant.bonds import analyze_bond_strategy, bond_duration, bond_price, recommended_bond_rungs
 
 
@@ -75,3 +76,20 @@ def test_recommended_barbell_changes_with_risk_score():
     assert aggressive[0]["allocation_weight"] < aggressive[-1]["allocation_weight"]
     assert aggressive[-1]["years_to_maturity"] > conservative[-1]["years_to_maturity"]
 
+
+def test_recommended_ladder_uses_curve_quotes_for_auto_filled_rungs():
+    quotes = {
+        "^IRX": MarketQuote(ticker="^IRX", price=4.20, provider="test"),
+        "^FVX": MarketQuote(ticker="^FVX", price=38.00, provider="test"),
+        "^TNX": MarketQuote(ticker="^TNX", price=43.50, provider="test"),
+        "^TYX": MarketQuote(ticker="^TYX", price=47.80, provider="test"),
+    }
+
+    ladder = recommended_bond_rungs(5, "ladder", quotes)
+
+    assert ladder[0]["label"] == "1-year Treasury bill"
+    assert ladder[0]["coupon_rate"] == pytest.approx(0.0)
+    assert ladder[0]["payments_per_year"] == 1
+    assert ladder[0]["market_price_pct"] < 100
+    assert ladder[2]["ticker"] == "IEI"
+    assert ladder[-1]["yield_to_maturity"] > ladder[1]["yield_to_maturity"]

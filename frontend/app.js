@@ -1,4 +1,4 @@
-const CLIENT_BUILD_ID = "client-home-2026-06-20-5";
+const CLIENT_BUILD_ID = "client-risk-guidance-tabs-2026-06-21-1";
 const THEME_STORAGE_KEY = "portfolio_theme";
 const SIDEBAR_STORAGE_KEY = "portfolio_sidebar_collapsed";
 const GRAPH_VISIBILITY_STORAGE_KEY = "portfolio_graph_visibility";
@@ -15,16 +15,16 @@ const ASSET_MODEL = {
 };
 
 const RISK_SCORE_TARGETS = {
-  1: ["Capital preservation", 0.04, 0.10, 0.70, 0.20],
-  2: ["Very conservative", 0.06, 0.20, 0.65, 0.15],
-  3: ["Conservative", 0.08, 0.30, 0.60, 0.10],
-  4: ["Conservative growth", 0.10, 0.40, 0.50, 0.10],
-  5: ["Balanced", 0.12, 0.50, 0.45, 0.05],
-  6: ["Balanced growth", 0.14, 0.60, 0.35, 0.05],
-  7: ["Growth", 0.17, 0.70, 0.25, 0.05],
-  8: ["High growth", 0.20, 0.80, 0.15, 0.05],
-  9: ["Aggressive", 0.24, 0.90, 0.07, 0.03],
-  10: ["Very aggressive", 0.30, 0.95, 0.03, 0.02],
+  1: { label: "Capital preservation", targetVolatility: 0.04, equity: 0.10, bonds: 0.70, cash: 0.20 },
+  2: { label: "Very conservative", targetVolatility: 0.06, equity: 0.20, bonds: 0.65, cash: 0.15 },
+  3: { label: "Conservative", targetVolatility: 0.08, equity: 0.30, bonds: 0.60, cash: 0.10 },
+  4: { label: "Conservative growth", targetVolatility: 0.10, equity: 0.40, bonds: 0.50, cash: 0.10 },
+  5: { label: "Balanced", targetVolatility: 0.12, equity: 0.50, bonds: 0.45, cash: 0.05 },
+  6: { label: "Balanced growth", targetVolatility: 0.14, equity: 0.60, bonds: 0.35, cash: 0.05 },
+  7: { label: "Growth", targetVolatility: 0.17, equity: 0.70, bonds: 0.25, cash: 0.05 },
+  8: { label: "High growth", targetVolatility: 0.20, equity: 0.80, bonds: 0.15, cash: 0.05 },
+  9: { label: "Aggressive", targetVolatility: 0.24, equity: 0.90, bonds: 0.07, cash: 0.03 },
+  10: { label: "Very aggressive", targetVolatility: 0.30, equity: 0.95, bonds: 0.03, cash: 0.02 },
 };
 
 const SERIES_COLORS = ["#0f766e", "#a35f00", "#8b1e3f", "#2f6f9f", "#5f5d1f", "#6d3b8f"];
@@ -363,6 +363,9 @@ function bindEvents() {
   $("#bond-save-watchlist").addEventListener("click", handleBondSaveWatchlist);
   $("#bond-load-recommendation").addEventListener("click", loadRecommendedBondStructure);
   $("#bond-strategy-type").addEventListener("change", loadRecommendedBondStructure);
+  $("#bond-strategy-type").addEventListener("input", renderBondRiskGuidance);
+  $("#bond-risk-score").addEventListener("input", renderBondRiskGuidance);
+  $("#bond-risk-score").addEventListener("change", loadRecommendedBondStructure);
   $("#bond-add-rung").addEventListener("click", handleAddBondRung);
   $("#bond-rung-rows").addEventListener("click", handleRemoveBondRung);
   $("#bond-strategy-form").addEventListener("submit", handleBondStrategy);
@@ -1405,6 +1408,8 @@ async function handleRiskTolerance(event) {
       });
       $("#bond-risk-score").value = riskScore;
       refreshDemoWorkspace(nextPortfolio, { tabId: "risk" });
+      renderBonds();
+      renderOptimization();
       toast("Demo risk profile updated.");
     } catch (error) {
       toast(error.message, true);
@@ -1434,6 +1439,8 @@ async function handleRiskTolerance(event) {
     });
     $("#bond-risk-score").value = riskScore;
     renderRiskTolerance();
+    renderBonds();
+    renderOptimization();
     toast("Risk tolerance saved and target allocation updated.");
   } catch (error) {
     toast(error.message, true);
@@ -1552,6 +1559,8 @@ async function loadRecommendedBondStructure() {
   if (!appState.bondAssets) await loadBondAssets({ autoRefresh: false });
   setRecommendedBondRungs();
   renderBondRungRows();
+  appState.bondStrategy = null;
+  renderBondStrategy();
 }
 
 function setRecommendedBondRungs() {
@@ -1569,16 +1578,7 @@ function handleAddBondRung() {
   if ($$("#bond-rung-rows tr").length) appState.bondRungs = bondRungsFromForm();
   const last = appState.bondRungs.at(-1);
   const years = Math.min(50, finiteNumber(last?.years_to_maturity, 0) + 1 || 1);
-  appState.bondRungs.push({
-    label: `${Number(years).toFixed(Number.isInteger(years) ? 0 : 1)}-year rung`,
-    years_to_maturity: years,
-    coupon_rate: 0.04,
-    yield_to_maturity: 0.04,
-    market_price_pct: 100,
-    face_value: 1000,
-    allocation_weight: 0,
-    payments_per_year: 2,
-  });
+  appState.bondRungs.push(autoBondRungFromYears(years, 0));
   renderBondRungRows();
 }
 
@@ -3069,6 +3069,130 @@ function renderRisk() {
   if (insights) insights.innerHTML = correlationInsightsHtml(displayCorrelation, threshold);
 }
 
+function riskScoreTarget(score) {
+  const normalized = Math.max(1, Math.min(10, Math.round(Number(score) || 5)));
+  return RISK_SCORE_TARGETS[normalized] || RISK_SCORE_TARGETS[5];
+}
+
+function riskVolatilityBand(score) {
+  const normalized = Math.max(1, Math.min(10, Math.round(Number(score) || 5)));
+  const current = riskScoreTarget(normalized).targetVolatility;
+  const previous = normalized > 1 ? riskScoreTarget(normalized - 1).targetVolatility : 0;
+  const next = normalized < 10 ? riskScoreTarget(normalized + 1).targetVolatility : null;
+  const minVolatility = normalized === 1 ? 0 : (previous + current) / 2;
+  const maxVolatility = next == null ? null : (current + next) / 2;
+  return {
+    min_volatility: minVolatility,
+    max_volatility: maxVolatility,
+    display_range: formatVolatilityBandRange(minVolatility, maxVolatility),
+    narrative: riskVolatilityNarrative(normalized, minVolatility, maxVolatility),
+  };
+}
+
+function formatVolatilityBandRange(minVolatility, maxVolatility) {
+  if (maxVolatility == null) return `${formatVolatilityBandPoint(minVolatility)}+`;
+  return `${formatVolatilityBandPoint(minVolatility)} to ${formatVolatilityBandPoint(maxVolatility)}`;
+}
+
+function formatVolatilityBandPoint(value) {
+  const percent = Math.round(Number(value) * 1000) / 10;
+  return `${Number.isInteger(percent) ? percent.toFixed(0) : percent.toFixed(1)}%`;
+}
+
+function riskVolatilityNarrative(score, minVolatility, maxVolatility) {
+  const bandRange = formatVolatilityBandRange(minVolatility, maxVolatility);
+  if (score <= 2) {
+    return `This is a lower-volatility range, usually around ${bandRange} annualized. It should feel relatively steady most of the time, although bond-heavy portfolios can still lose value when rates jump.`;
+  }
+  if (score <= 4) {
+    return `This is a cautious range, usually around ${bandRange} annualized. Month-to-month swings should stay more muted than an equity-heavy mix, but down periods still happen.`;
+  }
+  if (score <= 6) {
+    return `This is a moderate range, usually around ${bandRange} annualized. Expect meaningful swings and occasional double-digit losses in rough markets.`;
+  }
+  if (score <= 8) {
+    return `This is a growth-oriented range, usually around ${bandRange} annualized. Regular double-digit drawdowns are plausible, and recoveries can take time.`;
+  }
+  return `This is a high-volatility range, usually around ${bandRange} annualized. Sharp selloffs, deep drawdowns, and wide year-to-year swings should be expected.`;
+}
+
+function riskFitMessage(currentModel, profile) {
+  const currentVolatility = finiteNumber(currentModel?.model_volatility, NaN);
+  if (!Number.isFinite(currentVolatility)) return "Current modeled volatility is unavailable.";
+  const selectedBand = profile?.volatility_band || riskVolatilityBand(profile?.score);
+  const currentLabel = currentModel?.estimated_label || riskScoreTarget(currentModel?.estimated_score).label;
+  const lower = finiteNumber(selectedBand?.min_volatility, 0);
+  const upper = selectedBand?.max_volatility == null ? Infinity : finiteNumber(selectedBand.max_volatility, Infinity);
+  if (currentVolatility < lower - 1e-6) {
+    return `Your portfolio is currently modeling at ${pct(currentVolatility)}, below the selected ${selectedBand.display_range} band. That is steadier than this setting and lines up more closely with a ${currentLabel.toLowerCase()} profile.`;
+  }
+  if (currentVolatility > upper + 1e-6) {
+    return `Your portfolio is currently modeling at ${pct(currentVolatility)}, above the selected ${selectedBand.display_range} band. That is riskier than this setting and lines up more closely with a ${currentLabel.toLowerCase()} profile.`;
+  }
+  return `Your portfolio is currently modeling at ${pct(currentVolatility)}, which sits inside the selected ${selectedBand.display_range} band. That is broadly aligned with this risk setting.`;
+}
+
+function profileForScore(score) {
+  const normalized = Math.max(1, Math.min(10, Math.round(Number(score) || 5)));
+  const savedProfile = appState.riskTolerance?.profile;
+  if (savedProfile?.score === normalized) return savedProfile;
+  return riskProfilePreview(normalized);
+}
+
+function bondStructureGuidance(score, strategyType, band) {
+  const structure = strategyType === "barbell" ? "barbell" : "ladder";
+  if (structure === "barbell") {
+    if (score <= 3) return "This barbell keeps more capital on the short end so the overall rate sensitivity stays calmer.";
+    if (score <= 6) return "This barbell balances short-term stability with a meaningful long-end sleeve.";
+    return "This barbell can lean harder into long-duration exposure, accepting larger swings for more carry and curve exposure.";
+  }
+  if (score <= 3) return "This ladder stays short to intermediate so reinvestment is spread across time without taking too much duration risk.";
+  if (score <= 6) return "This ladder reaches into intermediate maturities for more carry while still staggering cash flows across several dates.";
+  return "This ladder can extend further out the curve, accepting more rate sensitivity and mark-to-market movement.";
+}
+
+function renderBondRiskGuidance() {
+  const note = $("#bond-risk-volatility-note");
+  if (!note) return;
+  const score = Math.max(1, Math.min(10, Math.round(finiteNumber($("#bond-risk-score")?.value, appState.portfolio?.settings?.risk_tolerance_score ?? 5))));
+  const strategyType = $("#bond-strategy-type")?.value || "ladder";
+  const profile = profileForScore(score);
+  const band = profile.volatility_band || riskVolatilityBand(score);
+  note.innerHTML = `<strong>${escapeHtml(profile.label)} bond fit</strong><span>${escapeHtml(`Score ${score} points to roughly ${band.display_range} annualized volatility. ${bondStructureGuidance(score, strategyType, band)}`)}</span>`;
+}
+
+function optimizationObjectiveLabel(objective) {
+  if (objective === "min_volatility") return "Min volatility";
+  if (objective === "max_sharpe") return "Max Sharpe";
+  return "Equal weight";
+}
+
+function optimizationObjectiveGuidance(objective, profile) {
+  const band = profile.volatility_band || riskVolatilityBand(profile.score);
+  if (objective === "min_volatility") {
+    return `This objective pushes weight toward holdings with lower modeled volatility. It is the closest fit when you want the portfolio to stay at or below the saved ${band.display_range} target band.`;
+  }
+  if (objective === "max_sharpe") {
+    return `This objective accepts more modeled risk when it improves expected return per unit of risk. It can land above or below the saved ${band.display_range} target band depending on the holdings available.`;
+  }
+  return `This objective gives each holding the same target weight. It is easy to compare, but the resulting portfolio can still sit well above or below the saved ${band.display_range} target band if the holdings have different volatility.`;
+}
+
+function renderOptimizationContext() {
+  const form = $("#optimization-form");
+  const riskNote = $("#optimization-risk-note");
+  const objectiveNote = $("#optimization-objective-note");
+  if (!form || !riskNote || !objectiveNote || !appState.portfolio) return;
+  const savedScore = appState.portfolio.settings?.risk_tolerance_score ?? 5;
+  const profile = profileForScore(savedScore);
+  const band = profile.volatility_band || riskVolatilityBand(savedScore);
+  const currentModel = appState.riskTolerance?.current_model;
+  const fit = currentModel ? ` ${riskFitMessage(currentModel, profile)}` : "";
+  riskNote.innerHTML = `<strong>${escapeHtml(profile.label)} saved target</strong><span>${escapeHtml(`Saved risk score ${savedScore} aims for roughly ${band.display_range} annualized volatility. ${band.narrative}${fit}`)}</span>`;
+  const objective = form.elements.objective.value || "equal_weight";
+  objectiveNote.innerHTML = `<strong>${escapeHtml(optimizationObjectiveLabel(objective))}</strong><span>${escapeHtml(optimizationObjectiveGuidance(objective, profile))}</span>`;
+}
+
 function renderRiskTolerance() {
   const form = $("#risk-tolerance-form");
   const summary = $("#risk-profile-summary");
@@ -3081,20 +3205,32 @@ function renderRiskTolerance() {
   const savedProfile = appState.riskTolerance?.profile;
   const profile = savedProfile?.score === score ? savedProfile : riskProfilePreview(score);
   const current = appState.riskTolerance?.current_model;
+  const selectedBand = profile.volatility_band || riskVolatilityBand(score);
   const target = profile.target_allocation;
+  const liveNote = $("#risk-tolerance-volatility-note");
+  if (liveNote) {
+    liveNote.innerHTML = `<strong>${escapeHtml(profile.label)} target</strong><span>${escapeHtml(`A score of ${score} aims for roughly ${selectedBand.display_range} annualized volatility. ${selectedBand.narrative}`)}</span>`;
+  }
   summary.innerHTML = [
     resultItem("Selected Score", `${score} - ${profile.label}`),
     resultItem("Target Volatility", pct(profile.target_volatility)),
+    resultItem("Target Vol Band", selectedBand.display_range),
     resultItem("Target Equity", pct(target.equity)),
     resultItem("Target Bonds", pct(target.bonds)),
     resultItem("Target Cash", pct(target.cash)),
     resultItem("Current Model Vol", current ? pct(current.model_volatility) : "--"),
-    resultItem("Current Model Score", current ? String(current.estimated_score) : "--"),
+    resultItem("Current Model Score", current ? `${current.estimated_score} - ${current.estimated_label || riskScoreTarget(current.estimated_score).label}` : "--"),
+    resultItem("Current Vol Band", current ? (current.volatility_band?.display_range || riskVolatilityBand(current.estimated_score).display_range) : "--"),
   ].join("");
-  description.innerHTML = [
+  const cards = [
     `<div class="activity-item"><strong>What this score means</strong><span>${escapeHtml(profile.description)}</span></div>`,
+    `<div class="activity-item"><strong>How this volatility usually feels</strong><span>${escapeHtml(selectedBand.narrative)}</span></div>`,
     `<div class="activity-item"><strong>How to read volatility</strong><span>${escapeHtml(profile.volatility_explanation)}</span></div>`,
-  ].join("");
+  ];
+  if (current) {
+    cards.push(`<div class="activity-item"><strong>Current portfolio fit</strong><span>${escapeHtml(riskFitMessage(current, profile))}</span></div>`);
+  }
+  description.innerHTML = cards.join("");
   const savedScore = appState.portfolio.settings?.risk_tolerance_score ?? 5;
   status.textContent = score === savedScore ? `Saved score ${savedScore}` : `Preview score ${score}`;
   status.className = score === savedScore ? "pill" : "pill muted";
@@ -3118,7 +3254,11 @@ function renderRiskTolerance() {
 }
 
 function riskProfilePreview(score) {
-  const [label, targetVolatility, equity, bonds, cash] = RISK_SCORE_TARGETS[score] || RISK_SCORE_TARGETS[5];
+  const config = riskScoreTarget(score);
+  const label = config.label;
+  const targetVolatility = config.targetVolatility;
+  const { equity, bonds, cash } = config;
+  const volatilityBand = riskVolatilityBand(score);
   let description;
   if (score <= 2) description = "Prioritizes smaller modeled drawdowns and liquidity. Most capital is assigned to bonds and cash, so long-run upside may be lower.";
   else if (score <= 4) description = "Accepts limited fluctuations while keeping a substantial fixed-income cushion. Bond prices can still fall when rates or credit spreads rise.";
@@ -3130,23 +3270,27 @@ function riskProfilePreview(score) {
     label,
     description,
     target_volatility: targetVolatility,
+    volatility_band: volatilityBand,
     target_allocation: { equity, bonds, cash },
-    volatility_explanation: "Target volatility estimates typical annual variability; it is not a maximum loss, guarantee, or confidence boundary.",
+    volatility_explanation: `Score ${score} targets about ${pct(targetVolatility)} annualized volatility, roughly a ${volatilityBand.display_range} band. ${volatilityBand.narrative} It is still a planning estimate, not a loss limit.`,
   };
 }
 
 function renderBonds() {
   const table = $("#bond-assets-table");
   const note = $("#bond-market-note");
+  const recommendationNote = $("#bond-recommendation-note");
   if (!table || !note) return;
   const payload = appState.bondAssets;
   if (!payload) {
     note.textContent = "Open this tab to load the public bond catalog and cached prices.";
+    if (recommendationNote) recommendationNote.textContent = "";
     table.innerHTML = `<div class="activity-item"><strong>Catalog not loaded</strong><span>Bond assets load only when this tab is opened.</span></div>`;
     renderBondStrategy();
     return;
   }
   note.textContent = payload.note;
+  if (recommendationNote) recommendationNote.textContent = payload.recommendation_note || "";
   const category = $("#bond-category-filter").value;
   const monitoredOnly = $("#bond-watchlist-only").checked;
   const assets = payload.assets.filter((asset) => (
@@ -3166,6 +3310,7 @@ function renderBonds() {
   ]));
   if (!appState.bondRungs.length) setRecommendedBondRungs();
   if (!$("#bond-rung-rows").children.length) renderBondRungRows();
+  renderBondRiskGuidance();
   renderBondStrategy();
 }
 
@@ -3176,9 +3321,9 @@ function renderBondRungRows() {
     <tr data-bond-rung="${index}">
       <td><input data-field="label" value="${escapeHtml(rung.label || `Rung ${index + 1}`)}" aria-label="Rung label"></td>
       <td><input data-field="years_to_maturity" type="number" min="0.25" max="50" step="0.25" value="${finiteNumber(rung.years_to_maturity, 1)}" aria-label="Years to maturity"></td>
-      <td><input data-field="coupon_rate" type="number" min="0" max="100" step="0.01" value="${fixed(finiteNumber(rung.coupon_rate, 0.04) * 100, 2)}" aria-label="Coupon percent"></td>
-      <td><input data-field="yield_to_maturity" type="number" min="-99" max="100" step="0.01" value="${fixed(finiteNumber(rung.yield_to_maturity, 0.04) * 100, 2)}" aria-label="Yield to maturity percent"></td>
-      <td><input data-field="market_price_pct" type="number" min="0.01" max="1000" step="0.01" value="${fixed(finiteNumber(rung.market_price_pct, 100), 2)}" aria-label="Market price per 100"></td>
+      <td><input data-field="coupon_rate" type="number" min="0" max="100" step="0.01" value="${fixed(finiteNumber(rung.coupon_rate, treasuryCouponRate(finiteNumber(rung.years_to_maturity, 1), interpolateBondYield(finiteNumber(rung.years_to_maturity, 1)))) * 100, 2)}" aria-label="Coupon percent"></td>
+      <td><input data-field="yield_to_maturity" type="number" min="-99" max="100" step="0.01" value="${fixed(finiteNumber(rung.yield_to_maturity, interpolateBondYield(finiteNumber(rung.years_to_maturity, 1))) * 100, 2)}" aria-label="Yield to maturity percent"></td>
+      <td><input data-field="market_price_pct" type="number" min="0.01" max="1000" step="0.01" value="${fixed(finiteNumber(rung.market_price_pct, autoBondRungFromYears(finiteNumber(rung.years_to_maturity, 1), 0).market_price_pct), 2)}" aria-label="Market price per 100"></td>
       <td><input data-field="allocation_weight" type="number" min="0" max="100" step="0.1" value="${fixed(finiteNumber(rung.allocation_weight, 0) * 100, 1)}" aria-label="Allocation weight percent"></td>
       <td><select data-field="payments_per_year" aria-label="Coupon payments per year"><option value="1" ${Number(rung.payments_per_year) === 1 ? "selected" : ""}>Annual</option><option value="2" ${Number(rung.payments_per_year || 2) === 2 ? "selected" : ""}>Semiannual</option><option value="4" ${Number(rung.payments_per_year) === 4 ? "selected" : ""}>Quarterly</option><option value="12" ${Number(rung.payments_per_year) === 12 ? "selected" : ""}>Monthly</option></select></td>
       <td><button class="icon-button danger-link" type="button" data-bond-rung-remove="${index}" title="Remove rung" aria-label="Remove rung">X</button></td>
@@ -3192,16 +3337,26 @@ function renderBondStrategy() {
   const results = $("#bond-strategy-results");
   const cashFlows = $("#bond-cash-flow-results");
   if (!summary || !notes || !results || !cashFlows) return;
+  renderBondRiskGuidance();
+  const selectedScore = Math.max(1, Math.min(10, Math.round(finiteNumber($("#bond-risk-score")?.value, appState.portfolio?.settings?.risk_tolerance_score ?? 5))));
+  const profile = profileForScore(selectedScore);
+  const band = profile.volatility_band || riskVolatilityBand(selectedScore);
+  const strategyType = ($("#bond-strategy-type")?.value || appState.bondStrategy?.strategy_type || "ladder");
   const strategy = appState.bondStrategy;
   if (!strategy) {
     summary.innerHTML = "";
-    notes.innerHTML = `<div class="activity-item"><strong>No calculation yet</strong><span>Load a risk-fit structure, adjust the assumptions, and calculate the strategy.</span></div>`;
+    notes.innerHTML = [
+      `<div class="activity-item"><strong>${escapeHtml(profile.label)} bond fit</strong><span>${escapeHtml(`Score ${selectedScore} aims for roughly ${band.display_range} annualized volatility. ${bondStructureGuidance(selectedScore, strategyType, band)}`)}</span></div>`,
+      `<div class="activity-item"><strong>No calculation yet</strong><span>Load a risk-fit structure, adjust the assumptions, and calculate the strategy.</span></div>`,
+    ].join("");
     results.innerHTML = "";
     cashFlows.innerHTML = "";
     return;
   }
   const metrics = strategy.summary;
   summary.innerHTML = [
+    metricCard("Risk Score", `${selectedScore} - ${profile.label}`),
+    metricCard("Target Vol Band", band.display_range),
     metricCard("Allocated", money(metrics.allocated_capital)),
     metricCard("Annual Income", money(metrics.annual_income)),
     metricCard("Current Yield", pct(metrics.portfolio_current_yield)),
@@ -3209,7 +3364,10 @@ function renderBondStrategy() {
     metricCard("Modified Duration", fixed(metrics.weighted_modified_duration, 2)),
     metricCard("Modeled Annual Return", pct(metrics.weighted_annualized_return)),
   ].join("");
-  notes.innerHTML = (strategy.notes || []).map((item) => `<div class="activity-item"><strong>Model note</strong><span>${escapeHtml(item)}</span></div>`).join("");
+  notes.innerHTML = [
+    `<div class="activity-item"><strong>${escapeHtml(profile.label)} bond fit</strong><span>${escapeHtml(`Score ${selectedScore} points to roughly ${band.display_range} annualized volatility. ${bondStructureGuidance(selectedScore, strategyType, band)}`)}</span></div>`,
+    ...(strategy.notes || []).map((item) => `<div class="activity-item"><strong>Model note</strong><span>${escapeHtml(item)}</span></div>`),
+  ].join("");
   renderTableHtml(results, ["Rung", "Weight", "Price / $100", "Model Price", "Coupon", "YTM", "Duration", "Annual Income", "Annualized Return"], strategy.rungs.map((rung) => [
     escapeHtml(rung.label),
     pct(rung.weight),
@@ -3261,11 +3419,16 @@ async function renderHeatmap() {
 }
 
 function renderOptimization() {
+  renderOptimizationContext();
   const result = appState.optimization;
   if (!result) {
     $("#optimization-results").innerHTML = `<div class="activity-item"><strong>No optimization run</strong><span>Select an objective to produce target weights.</span></div>`;
     return;
   }
+  const savedScore = appState.portfolio?.settings?.risk_tolerance_score ?? 5;
+  const profile = profileForScore(savedScore);
+  const band = profile.volatility_band || riskVolatilityBand(savedScore);
+  const objective = result.objective || $("#optimization-form")?.elements?.objective?.value || "equal_weight";
   const table = document.createElement("div");
   renderTable(table, ["Ticker", "Current", "Target", "Delta"], result.allocations.map((item) => [
     item.symbol,
@@ -3274,7 +3437,13 @@ function renderOptimization() {
     signedMoney(item.trade_value_delta),
   ]));
   $("#optimization-results").innerHTML = `
-    <div class="activity-item"><strong>${escapeHtml(result.objective)}</strong><span>${escapeHtml((result.notes || []).join(" "))}</span></div>
+    <div class="result-grid">
+      ${resultItem("Saved Risk Score", `${savedScore} - ${profile.label}`)}
+      ${resultItem("Target Vol Band", band.display_range)}
+      ${resultItem("Objective", optimizationObjectiveLabel(objective))}
+    </div>
+    <div class="activity-item"><strong>Objective fit</strong><span>${escapeHtml(optimizationObjectiveGuidance(objective, profile))}</span></div>
+    <div class="activity-item"><strong>Model note</strong><span>${escapeHtml((result.notes || []).join(" "))}</span></div>
     ${table.innerHTML}`;
 }
 
@@ -5491,6 +5660,70 @@ function defaultBondRungs(strategyType) {
   return riskFitBondRungs(5, strategyType);
 }
 
+function defaultBondCurveAnchors() {
+  return [
+    [0.25, 0.0435],
+    [5, 0.0395],
+    [10, 0.0430],
+    [30, 0.0470],
+  ];
+}
+
+function interpolateBondYield(years, anchors = defaultBondCurveAnchors()) {
+  if (!anchors.length) return 0.04;
+  if (years <= anchors[0][0]) return anchors[0][1];
+  for (let index = 0; index < anchors.length - 1; index += 1) {
+    const [leftYears, leftYield] = anchors[index];
+    const [rightYears, rightYield] = anchors[index + 1];
+    if (years >= leftYears && years <= rightYears) {
+      const span = rightYears - leftYears;
+      if (span <= 0) return rightYield;
+      const weight = (years - leftYears) / span;
+      return leftYield + ((rightYield - leftYield) * weight);
+    }
+  }
+  return anchors.at(-1)[1];
+}
+
+function treasuryCouponRate(years, yieldToMaturity) {
+  if (years <= 1) return 0;
+  const step = 0.00125;
+  return Math.max(step, Math.round(yieldToMaturity / step) * step);
+}
+
+function bondPricePct(faceValue, couponRate, yearsToMaturity, yieldToMaturity, paymentsPerYear) {
+  const periods = Math.max(1, Math.round(yearsToMaturity * paymentsPerYear));
+  const periodYield = yieldToMaturity / paymentsPerYear;
+  const coupon = faceValue * couponRate / paymentsPerYear;
+  const discountBase = 1 + periodYield;
+  if (!(discountBase > 0)) return 100;
+  let price = 0;
+  for (let period = 1; period <= periods; period += 1) {
+    price += coupon / Math.pow(discountBase, period);
+  }
+  price += faceValue / Math.pow(discountBase, periods);
+  return price;
+}
+
+function autoBondRungFromYears(years, allocationWeight = 0) {
+  const normalizedYears = Math.max(0.25, Math.min(50, finiteNumber(years, 1)));
+  const yieldToMaturity = interpolateBondYield(normalizedYears);
+  const couponRate = treasuryCouponRate(normalizedYears, yieldToMaturity);
+  const paymentsPerYear = normalizedYears <= 1 ? 1 : 2;
+  const marketPricePct = bondPricePct(100, couponRate, normalizedYears, yieldToMaturity, paymentsPerYear);
+  const instrumentType = normalizedYears <= 1 ? "Treasury bill" : normalizedYears < 10 ? "Treasury note" : "Treasury bond";
+  return {
+    label: `${Number(normalizedYears).toFixed(Number.isInteger(normalizedYears) ? 0 : 1)}-year ${instrumentType}`,
+    years_to_maturity: normalizedYears,
+    coupon_rate: couponRate,
+    yield_to_maturity: yieldToMaturity,
+    market_price_pct: marketPricePct,
+    face_value: 1000,
+    allocation_weight: allocationWeight,
+    payments_per_year: paymentsPerYear,
+  };
+}
+
 function riskFitBondRungs(riskScore, strategyType) {
   let terms;
   let weights;
@@ -5504,16 +5737,7 @@ function riskFitBondRungs(riskScore, strategyType) {
     else terms = [2, 5, 10, 15, 20];
     weights = terms.map(() => 1 / terms.length);
   }
-  return terms.map((years, index) => ({
-    label: `${years}-year rung`,
-    years_to_maturity: years,
-    coupon_rate: 0.04,
-    yield_to_maturity: 0.04,
-    market_price_pct: 100,
-    face_value: 1000,
-    allocation_weight: weights[index],
-    payments_per_year: 2,
-  }));
+  return terms.map((years, index) => autoBondRungFromYears(years, weights[index]));
 }
 
 function bondRungsFromForm() {

@@ -135,11 +135,19 @@ class OptimizationResponse(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class VolatilityBandResponse(BaseModel):
+    min_volatility: float
+    max_volatility: float | None = None
+    display_range: str
+    narrative: str
+
+
 class RiskToleranceProfileResponse(BaseModel):
     score: int
     label: str
     description: str
     target_volatility: float
+    volatility_band: VolatilityBandResponse
     target_allocation: dict[str, float]
     volatility_explanation: str
 
@@ -147,6 +155,8 @@ class RiskToleranceProfileResponse(BaseModel):
 class PortfolioRiskModelResponse(BaseModel):
     model_volatility: float
     estimated_score: int
+    estimated_label: str
+    volatility_band: VolatilityBandResponse
     asset_class_allocation: dict[str, float]
 
 
@@ -301,10 +311,11 @@ class BondAssetsResponse(BaseModel):
     recommended_ladder: list[BondRungInput]
     recommended_barbell: list[BondRungInput]
     note: str
+    recommendation_note: str = ""
 
 
 class BondAssetRefreshRequest(BaseModel):
-    tickers: list[str] = Field(default_factory=list, max_length=12)
+    tickers: list[str] = Field(default_factory=list, max_length=24)
 
     @field_validator("tickers", mode="before")
     @classmethod
@@ -844,7 +855,7 @@ class PortfolioPerformancePointResponse(BaseModel):
 class PortfolioHistoryCoverageResponse(BaseModel):
     effective_start: str | None = None
     end: str | None = None
-    quality: Literal["complete_ledger", "reconstructed_opening_lots", "partial_market_data", "unavailable"]
+    quality: Literal["complete_ledger", "reconstructed_opening_lots", "estimated_opening_snapshot", "partial_market_data", "unavailable"]
     partial_history: bool
     note: str
 

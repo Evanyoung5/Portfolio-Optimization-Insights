@@ -35,6 +35,7 @@ ASSET_CLASS_MODEL_VOLATILITY = {
 def risk_tolerance_profile(score: int) -> dict[str, Any]:
     normalized = _normalize_score(score)
     source = RISK_PROFILES[normalized]
+    band = _volatility_band(normalized)
     if normalized <= 2:
         description = "Prioritizes smaller modeled drawdowns and liquidity. Most capital is assigned to bonds and cash, so long-run upside may be lower."
     elif normalized <= 4:
@@ -50,14 +51,16 @@ def risk_tolerance_profile(score: int) -> dict[str, Any]:
         "label": source["label"],
         "description": description,
         "target_volatility": source["target_volatility"],
+        "volatility_band": band,
         "target_allocation": {
             "equity": source["equity"],
             "bonds": source["bonds"],
             "cash": source["cash"],
         },
         "volatility_explanation": (
-            "Target volatility is a model estimate of typical annual price variability, not a maximum loss. "
-            "A 12% target does not mean losses stop at 12%."
+            f"Score {normalized} targets about {_format_volatility(source['target_volatility'])} annualized volatility, "
+            f"roughly a {band['display_range']} band. {band['narrative']} "
+            "It is a planning estimate of typical variability, not a maximum loss or drawdown limit."
         ),
     }
 
@@ -65,9 +68,12 @@ def risk_tolerance_profile(score: int) -> dict[str, Any]:
 def estimate_portfolio_risk(portfolio: Portfolio) -> dict[str, Any]:
     total_equity = portfolio.cash + sum(position.market_value for position in portfolio.positions)
     if total_equity <= 0:
+        band = _volatility_band(1)
         return {
             "model_volatility": 0.0,
             "estimated_score": 1,
+            "estimated_label": RISK_PROFILES[1]["label"],
+            "volatility_band": band,
             "asset_class_allocation": {"equity": 0.0, "bonds": 0.0, "cash": 0.0},
         }
 
@@ -91,9 +97,12 @@ def estimate_portfolio_risk(portfolio: Portfolio) -> dict[str, Any]:
         RISK_PROFILES,
         key=lambda score: abs(RISK_PROFILES[score]["target_volatility"] - model_volatility),
     )
+    band = _volatility_band(estimated_score)
     return {
         "model_volatility": model_volatility,
         "estimated_score": estimated_score,
+        "estimated_label": RISK_PROFILES[estimated_score]["label"],
+        "volatility_band": band,
         "asset_class_allocation": exposures,
     }
 
@@ -274,3 +283,57 @@ def _normalize_symbols(symbols: list[str]) -> list[str]:
         if clean and clean not in normalized:
             normalized.append(clean)
     return normalized
+
+
+def _volatility_band(score: int) -> dict[str, Any]:
+    normalized = _normalize_score(score)
+    targets = {key: float(profile["target_volatility"]) for key, profile in RISK_PROFILES.items()}
+    current = targets[normalized]
+    lower = 0.0 if normalized == 1 else (targets[normalized - 1] + current) / 2
+    upper = None if normalized == max(RISK_PROFILES) else (current + targets[normalized + 1]) / 2
+    return {
+        "min_volatility": lower,
+        "max_volatility": upper,
+        "display_range": _format_volatility_range(lower, upper),
+        "narrative": _volatility_band_narrative(normalized, lower, upper),
+    }
+
+
+def _volatility_band_narrative(score: int, lower: float, upper: float | None) -> str:
+    range_text = _format_volatility_range(lower, upper)
+    if score <= 2:
+        return (
+            f"That is a lower-volatility range, usually around {range_text} annualized. "
+            "It should feel relatively steady most of the time, although rate shocks can still hurt bond-heavy portfolios."
+        )
+    if score <= 4:
+        return (
+            f"That is a cautious range, usually around {range_text} annualized. "
+            "Month-to-month swings should stay more muted than an equity-heavy portfolio, but down periods still happen."
+        )
+    if score <= 6:
+        return (
+            f"That is a moderate range, usually around {range_text} annualized. "
+            "The portfolio should still experience meaningful swings and occasional double-digit losses in rough markets."
+        )
+    if score <= 8:
+        return (
+            f"That is a growth-oriented range, usually around {range_text} annualized. "
+            "Regular double-digit drawdowns are plausible, and recovery periods can take time."
+        )
+    return (
+        f"That is a high-volatility range, usually around {range_text} annualized. "
+        "Sharp selloffs, deep drawdowns, and wide year-to-year performance swings should be expected."
+    )
+
+
+def _format_volatility_range(lower: float, upper: float | None) -> str:
+    if upper is None:
+        return f"{_format_volatility(lower)}+"
+    return f"{_format_volatility(lower)} to {_format_volatility(upper)}"
+
+
+def _format_volatility(value: float) -> str:
+    percent = round(float(value) * 100, 1)
+    text = f"{percent:.1f}".rstrip("0").rstrip(".")
+    return f"{text}%"

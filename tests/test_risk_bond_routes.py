@@ -36,6 +36,8 @@ def test_risk_tolerance_is_private_persistent_setting_and_drives_reweighting(cli
     state = client.get(f"/portfolios/{portfolio_id}/risk-tolerance", headers=auth_headers)
     assert state.status_code == 200
     assert state.json()["profile"]["label"] == "Conservative"
+    assert state.json()["profile"]["volatility_band"]["display_range"] == "7% to 9%"
+    assert state.json()["current_model"]["estimated_label"]
 
     result = client.post(
         f"/portfolios/{portfolio_id}/risk-tolerance/reweight",
@@ -54,7 +56,13 @@ def test_bond_catalog_returns_cached_public_prices_and_risk_fit_defaults(client,
         json={"risk_tolerance_score": 4, "bond_watchlist": ["SHY"]},
     )
     portfolio_repository.upsert_market_quotes(
-        [MarketQuote(ticker="SHY", price=82.25, provider="test", previous_close=82.0, daily_return_pct=0.3049)]
+        [
+            MarketQuote(ticker="SHY", price=82.25, provider="test", previous_close=82.0, daily_return_pct=0.3049),
+            MarketQuote(ticker="^IRX", price=4.2, provider="test"),
+            MarketQuote(ticker="^FVX", price=38.0, provider="test"),
+            MarketQuote(ticker="^TNX", price=43.5, provider="test"),
+            MarketQuote(ticker="^TYX", price=47.8, provider="test"),
+        ]
     )
 
     response = client.get(f"/portfolios/{portfolio_id}/bond-assets", headers=auth_headers)
@@ -66,6 +74,8 @@ def test_bond_catalog_returns_cached_public_prices_and_risk_fit_defaults(client,
     assert shy["monitored"] is True
     assert len(payload["recommended_ladder"]) == 5
     assert len(payload["recommended_barbell"]) == 2
+    assert payload["recommended_ladder"][0]["coupon_rate"] == pytest.approx(0.0)
+    assert payload["recommendation_note"]
 
 
 def test_bond_strategy_route_calculates_income_and_duration(client, auth_headers):
@@ -126,5 +136,5 @@ def test_bond_refresh_queues_only_catalog_tickers_through_background_worker(clie
 
     assert response.status_code == 202
     assert captured["job_type"] == "refresh_bond_market_data"
-    assert captured["payload"]["tickers"] == ["SHY", "IEF"]
+    assert {"SHY", "IEF", "^IRX", "^FVX", "^TNX", "^TYX"}.issubset(set(captured["payload"]["tickers"]))
     assert captured["payload"]["provider_signature"].startswith("account-")

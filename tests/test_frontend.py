@@ -45,11 +45,15 @@ def test_frontend_index_is_served(client):
     assert "/static/app.js?v=" in response.text
     assert "risk-tolerance-form" in response.text
     assert "risk-tolerance-score" in response.text
+    assert "risk-tolerance-volatility-note" in response.text
+    assert "bond-risk-volatility-note" in response.text
     assert "risk-reweight-results" in response.text
     assert "Bond Monitor" in response.text
     assert "bond-assets-table" in response.text
     assert "bond-strategy-form" in response.text
     assert "bond-rung-rows" in response.text
+    assert "optimization-risk-note" in response.text
+    assert "optimization-objective-note" in response.text
     assert "theme-toggle" in response.text
     assert "sidebar-toggle" in response.text
     assert "relativistic-bs-force-refresh" in response.text

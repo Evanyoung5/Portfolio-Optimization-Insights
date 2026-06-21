@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 
 BondStrategyType = Literal["ladder", "barbell"]
@@ -144,6 +144,48 @@ BOND_ASSET_CATALOG: list[dict[str, Any]] = [
 
 BOND_ASSET_BY_TICKER = {item["ticker"]: item for item in BOND_ASSET_CATALOG}
 
+TREASURY_CURVE_CATALOG: list[dict[str, Any]] = [
+    {
+        "ticker": "^IRX",
+        "label": "13-week Treasury bill yield",
+        "term_years": 0.25,
+        "quote_divisor": 100.0,
+    },
+    {
+        "ticker": "^FVX",
+        "label": "5-year Treasury note yield",
+        "term_years": 5.0,
+        "quote_divisor": 1000.0,
+    },
+    {
+        "ticker": "^TNX",
+        "label": "10-year Treasury note yield",
+        "term_years": 10.0,
+        "quote_divisor": 1000.0,
+    },
+    {
+        "ticker": "^TYX",
+        "label": "30-year Treasury bond yield",
+        "term_years": 30.0,
+        "quote_divisor": 1000.0,
+    },
+]
+
+DEFAULT_TREASURY_CURVE = {
+    0.25: 0.0435,
+    5.0: 0.0395,
+    10.0: 0.0430,
+    30.0: 0.0470,
+}
+
+BOND_REFERENCE_TICKERS = [item["ticker"] for item in TREASURY_CURVE_CATALOG]
+BOND_SUPPORTED_QUOTE_TICKERS = list(dict.fromkeys([*BOND_ASSET_BY_TICKER, *BOND_REFERENCE_TICKERS]))
+BOND_SUPPORTED_QUOTE_TICKERS_SET = set(BOND_SUPPORTED_QUOTE_TICKERS)
+BOND_RECOMMENDATION_NOTE = (
+    "Risk-fit rungs are auto-filled from cached U.S. Treasury curve quotes when available. "
+    "Short rungs model Treasury bills and longer rungs round coupons to a plausible Treasury-style increment."
+)
+
 
 def bond_price(
     *,
@@ -252,38 +294,118 @@ def analyze_bond_strategy(
     }
 
 
-def recommended_bond_rungs(risk_score: int, strategy_type: BondStrategyType) -> list[dict[str, Any]]:
+def recommended_bond_rungs(
+    risk_score: int,
+    strategy_type: BondStrategyType,
+    quotes_by_ticker: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     score = int(risk_score)
     if not 1 <= score <= 10:
         raise ValueError("risk_score must be between 1 and 10.")
+    terms, weights = _recommended_terms_and_weights(score, strategy_type)
+    curve = _treasury_curve_anchors(quotes_by_ticker)
+    return [
+        _auto_bond_rung(term, weight=weight, curve=curve)
+        for term, weight in zip(terms, weights, strict=True)
+    ]
+
+
+def _recommended_terms_and_weights(risk_score: int, strategy_type: BondStrategyType) -> tuple[list[float], list[float]]:
     if strategy_type == "barbell":
-        if score <= 3:
+        if risk_score <= 3:
             terms, weights = [1.0, 7.0], [0.70, 0.30]
-        elif score <= 6:
+        elif risk_score <= 6:
             terms, weights = [1.0, 10.0], [0.55, 0.45]
         else:
             terms, weights = [2.0, 20.0], [0.35, 0.65]
     else:
-        if score <= 3:
+        if risk_score <= 3:
             terms = [1.0, 2.0, 3.0, 4.0, 5.0]
-        elif score <= 6:
+        elif risk_score <= 6:
             terms = [1.0, 3.0, 5.0, 7.0, 10.0]
         else:
             terms = [2.0, 5.0, 10.0, 15.0, 20.0]
         weights = [1 / len(terms)] * len(terms)
-    return [
-        {
-            "label": f"{term:g}-year rung",
-            "years_to_maturity": term,
-            "allocation_weight": weight,
-            "face_value": 1000.0,
-            "market_price_pct": 100.0,
-            "coupon_rate": 0.04,
-            "yield_to_maturity": 0.04,
-            "payments_per_year": 2,
-        }
-        for term, weight in zip(terms, weights, strict=True)
-    ]
+    return terms, weights
+
+
+def _auto_bond_rung(term: float, *, weight: float, curve: list[tuple[float, float]]) -> dict[str, Any]:
+    yield_to_maturity = _interpolate_curve_yield(term, curve)
+    coupon_rate = _coupon_rate_for_term(term, yield_to_maturity)
+    payments_per_year = 1 if term <= 1 else 2
+    market_price_pct = bond_price(
+        face_value=100.0,
+        coupon_rate=coupon_rate,
+        years_to_maturity=term,
+        yield_to_maturity=yield_to_maturity,
+        payments_per_year=payments_per_year,
+    )
+    proxy = _proxy_asset_for_term(term)
+    instrument_type = "bill" if term <= 1 else "note" if term < 10 else "bond"
+    return {
+        "label": f"{term:g}-year Treasury {instrument_type}",
+        "ticker": proxy["ticker"] if proxy else None,
+        "years_to_maturity": term,
+        "allocation_weight": weight,
+        "face_value": 1000.0,
+        "market_price_pct": market_price_pct,
+        "coupon_rate": coupon_rate,
+        "yield_to_maturity": yield_to_maturity,
+        "payments_per_year": payments_per_year,
+    }
+
+
+def _treasury_curve_anchors(quotes_by_ticker: Mapping[str, Any] | None) -> list[tuple[float, float]]:
+    curve = dict(DEFAULT_TREASURY_CURVE)
+    for item in TREASURY_CURVE_CATALOG:
+        raw_quote = None if quotes_by_ticker is None else quotes_by_ticker.get(item["ticker"])
+        raw_price = getattr(raw_quote, "price", None)
+        try:
+            price = float(raw_price)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0:
+            continue
+        yield_to_maturity = price / float(item["quote_divisor"])
+        if 0 < yield_to_maturity < 1:
+            curve[float(item["term_years"])] = yield_to_maturity
+    return sorted(curve.items(), key=lambda pair: pair[0])
+
+
+def _interpolate_curve_yield(term: float, curve: list[tuple[float, float]]) -> float:
+    if not curve:
+        return 0.04
+    if term <= curve[0][0]:
+        return curve[0][1]
+    for left, right in zip(curve, curve[1:], strict=False):
+        if left[0] <= term <= right[0]:
+            span = right[0] - left[0]
+            if span <= 0:
+                return right[1]
+            weight = (term - left[0]) / span
+            return left[1] + (right[1] - left[1]) * weight
+    return curve[-1][1]
+
+
+def _coupon_rate_for_term(term: float, yield_to_maturity: float) -> float:
+    if term <= 1:
+        return 0.0
+    coupon_step = 0.00125  # Treasury-style 0.125% coupon increments.
+    return max(coupon_step, round(yield_to_maturity / coupon_step) * coupon_step)
+
+
+def _proxy_asset_for_term(term: float) -> dict[str, Any] | None:
+    if term <= 1:
+        return BOND_ASSET_BY_TICKER.get("BIL")
+    if term <= 3:
+        return BOND_ASSET_BY_TICKER.get("SHY")
+    if term <= 7:
+        return BOND_ASSET_BY_TICKER.get("IEI")
+    if term <= 10:
+        return BOND_ASSET_BY_TICKER.get("IEF")
+    if term <= 20:
+        return BOND_ASSET_BY_TICKER.get("TLH")
+    return BOND_ASSET_BY_TICKER.get("TLT")
 
 
 def _analyze_rung(rung: dict[str, Any], *, capital: float, weight: float, index: int) -> dict[str, Any]:

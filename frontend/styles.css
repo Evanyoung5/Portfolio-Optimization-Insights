@@ -2969,6 +2969,188 @@ tbody tr.atm-row {
   margin-bottom: 0;
 }
 
+/* Precision-theme refinements: crisper typography, tighter corners, and flatter surfaces. */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow: 0 8px 18px rgba(24, 38, 34, 0.06);
+}
+
+:root[data-theme="dark"] {
+  --shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+body {
+  font-family: var(--font-ui);
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+th,
+.metric span,
+.hero-stat-label,
+.desk-label,
+.hero-mini-table-head,
+.splash-eyebrow,
+.feature-kicker,
+.home-step-number {
+  letter-spacing: 0.02em;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 650;
+}
+
+strong {
+  font-weight: 700;
+}
+
+th {
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+}
+
+.home-hero-copy h2 {
+  font-size: clamp(2.7rem, 4.4vw, 4.2rem);
+  font-weight: 620;
+  line-height: 1.02;
+}
+
+.home-section-intro h3,
+.home-access-copy h3,
+.home-capability-copy h3 {
+  font-size: clamp(1.75rem, 2.7vw, 2.4rem);
+  line-height: 1.12;
+}
+
+.splash-hero h2 {
+  font-size: clamp(2.2rem, 4vw, 3.6rem);
+}
+
+.topbar,
+.tabs,
+.panel,
+.empty-state,
+.import-result,
+input,
+select,
+textarea,
+.portfolio-item,
+.metric,
+.strategy-lab-chart-shell,
+.strategy-slot,
+.risk-number-guide > div,
+.bond-primer > div,
+.performance-stat,
+.legend-item,
+.performance-chart-shell,
+.chart-tooltip,
+.theme-control,
+.activity-item,
+.result-item,
+.quote-card,
+.matrix-cell,
+.temperature-legend span,
+.correlation-pair,
+.options-legend-grid > div,
+.heatmap-grid,
+.heat-tile,
+.toast,
+.graph-customizer,
+.segmented-control button,
+.benchmark-selector label,
+.demo-tour-popover,
+.demo-tour-target,
+.vol-estimate-card,
+.home-hero-points div,
+.home-process-step,
+.home-overview-card,
+.home-start-card,
+.home-capability-card,
+.home-preview-card,
+.home-preview-chart-card,
+.home-preview-panel,
+.home-login-panel,
+.splash-hero,
+.splash-demo-note,
+.splash-feature,
+.onboarding-intro,
+.onboarding-card,
+.onboarding-step-grid div,
+.onboarding-lot-builder,
+.demo-banner,
+.tab,
+.button,
+.icon-button,
+.brand-mark {
+  border-radius: var(--radius-md);
+}
+
+.pill,
+.chip,
+.splash-eyebrow,
+.feature-kicker,
+.hero-status {
+  border-radius: var(--radius-sm);
+}
+
+.bar-track,
+.bar-fill,
+.benchmark-check,
+.hero-heat-grid span {
+  border-radius: var(--radius-xs);
+}
+
+.button,
+.icon-button,
+.tab,
+.topbar-link,
+.portfolio-item,
+.graph-customizer,
+.benchmark-selector label,
+.segmented-control button {
+  font-weight: 600;
+}
+
+.panel,
+.home-preview-panel,
+.splash-hero,
+.splash-feature,
+.home-overview-card,
+.home-process-step,
+.home-capability-card,
+.home-login-panel,
+.home-start-card,
+.home-preview-card,
+.home-preview-chart-card,
+.metric,
+.quote-card,
+.activity-item,
+.result-item {
+  box-shadow: var(--shadow);
+}
+
+.brand-mark,
+.button.primary,
+.tab.active,
+.segmented-control button.active,
+.benchmark-selector label.active {
+  box-shadow: none;
+}
+
 @media (max-width: 900px) {
   .relativistic-bs-controls,
   .options-history-controls,

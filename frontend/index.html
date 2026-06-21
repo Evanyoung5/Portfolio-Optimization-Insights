@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portfolio Optimization</title>
-  <script src="/static/theme-init.js?v=client-home-2026-06-20-5"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=client-home-2026-06-20-5">
+  <script src="/static/theme-init.js?v=client-risk-guidance-tabs-2026-06-21-1"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=client-risk-guidance-tabs-2026-06-21-1">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -551,7 +551,8 @@
             <div class="section-head">
               <div>
                 <h3>Ladder And Barbell Builder</h3>
-                <p class="chart-note">A ladder spreads maturities across time. A barbell concentrates at short and long maturities. Enter assumptions for conventional coupon bonds; this is not an order ticket.</p>
+                <p class="chart-note">A ladder spreads maturities across time. A barbell concentrates at short and long maturities. Use the risk-fit loader to auto-fill rungs from cached Treasury-curve quotes, then adjust any assumption you want to stress-test. This is not an order ticket.</p>
+                <p id="bond-recommendation-note" class="chart-note"></p>
               </div>
               <button id="bond-load-recommendation" class="button secondary" type="button">Load risk-fit structure</button>
             </div>
@@ -559,6 +560,7 @@
               <label>Structure<select id="bond-strategy-type" name="strategy_type"><option value="ladder">Ladder</option><option value="barbell">Barbell</option></select></label>
               <label>Capital<input name="capital" type="number" min="0" step="100" value="10000"></label>
               <label>Risk score<input id="bond-risk-score" name="risk_score" type="number" min="1" max="10" step="1" value="5"></label>
+              <div id="bond-risk-volatility-note" class="activity-item span-2"><strong>Bond risk fit</strong><span>Loading risk guidance.</span></div>
               <button id="bond-add-rung" class="button secondary" type="button">Add rung</button>
               <div class="span-2 table-wrap"><table class="bond-rung-table"><thead><tr><th>Rung</th><th>Years</th><th>Coupon %</th><th>YTM %</th><th>Price / $100</th><th>Weight %</th><th>Payments</th><th></th></tr></thead><tbody id="bond-rung-rows"></tbody></table></div>
               <button class="button primary" type="submit">Calculate strategy</button>
@@ -597,15 +599,16 @@
               <span id="risk-tolerance-status" class="pill muted">Loading profile</span>
             </div>
             <div class="risk-number-guide" aria-label="Risk score guide">
-              <div><strong>1-2</strong><span>Capital preservation. Smaller modeled swings, mostly bonds and cash.</span></div>
-              <div><strong>3-4</strong><span>Conservative. Limited growth exposure with a substantial fixed-income cushion.</span></div>
-              <div><strong>5-6</strong><span>Balanced. Meaningful growth and bond exposure; double-digit declines remain possible.</span></div>
-              <div><strong>7-8</strong><span>Growth. Larger fluctuations and longer recovery periods should be expected.</span></div>
-              <div><strong>9-10</strong><span>Aggressive. Very large drawdowns are plausible and bond/cash buffers are small.</span></div>
+              <div><strong>1-2</strong><span>About 4% to 6% annualized volatility. Built to feel steadier, with most capital in bonds and cash.</span></div>
+              <div><strong>3-4</strong><span>About 7% to 11% annualized volatility. Conservative growth, with clearer equity exposure but a meaningful fixed-income cushion.</span></div>
+              <div><strong>5-6</strong><span>About 11% to 15.5% annualized volatility. Balanced risk, with noticeable swings and occasional double-digit losses.</span></div>
+              <div><strong>7-8</strong><span>About 15.5% to 22% annualized volatility. Growth-oriented and more sensitive to equity market drawdowns.</span></div>
+              <div><strong>9-10</strong><span>About 22% to 30%+ annualized volatility. Aggressive settings with limited buffers and much wider performance swings.</span></div>
             </div>
             <div class="risk-tolerance-layout">
               <form id="risk-tolerance-form" class="form-grid risk-tolerance-form">
                 <label class="span-2 range-control">Selected risk score: <output id="risk-tolerance-score-value">5</output><input id="risk-tolerance-score" name="risk_tolerance_score" type="range" min="1" max="10" step="1" value="5"></label>
+                <div id="risk-tolerance-volatility-note" class="activity-item span-2"><strong>Selected target</strong><span>Loading volatility guidance.</span></div>
                 <label class="span-2">Bond assets for the target sleeve<input name="bond_symbols" placeholder="AGG, SHY" title="Choose public bond ETFs from the Bond Monitor. These are used only for a target-allocation preview."><span class="field-help">Leave blank to show an unallocated bond sleeve.</span></label>
                 <label>Maximum single position<input name="max_position_weight" type="number" min="0.05" max="1" step="0.01" value="0.35"><span class="field-help">Decimal weight, such as 0.35 for 35%.</span></label>
                 <button class="button primary" type="submit">Save and build targets</button>
@@ -868,6 +871,8 @@
               <label>Min Weight<input name="min_weight" type="number" min="0" max="1" step="0.01" value="0"></label>
               <label>Max Weight<input name="max_weight" type="number" min="0" max="1" step="0.01" value="1"></label>
               <label>Risk Free Rate<input name="risk_free_rate" type="number" step="0.0001"></label>
+              <div id="optimization-risk-note" class="activity-item span-2"><strong>Risk target</strong><span>Loading saved volatility guidance.</span></div>
+              <div id="optimization-objective-note" class="activity-item span-2"><strong>Objective guide</strong><span>Choose an objective to see how it trades off concentration, return, and modeled volatility.</span></div>
               <button class="button primary" type="submit">Optimize</button>
             </form>
             <section class="panel"><h3>Allocation Deltas</h3><div id="optimization-results" class="table-wrap"></div></section>
@@ -943,7 +948,7 @@
   </section>
 
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" defer></script>
-  <script src="/static/demo-data.js?v=client-home-2026-06-20-5" defer></script>
-  <script src="/static/app.js?v=client-home-2026-06-20-5" defer></script>
+  <script src="/static/demo-data.js?v=client-risk-guidance-tabs-2026-06-21-1" defer></script>
+  <script src="/static/app.js?v=client-risk-guidance-tabs-2026-06-21-1" defer></script>
 </body>
 </html>

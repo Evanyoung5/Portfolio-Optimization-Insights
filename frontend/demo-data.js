@@ -43,6 +43,45 @@
     10: { label: "Very aggressive", targetVolatility: 0.3, equity: 0.95, bonds: 0.03, cash: 0.02 },
   };
 
+  function riskTarget(score) {
+    const normalized = Math.min(10, Math.max(1, Math.round(Number(score) || 5)));
+    return RISK_TARGETS[normalized] || RISK_TARGETS[5];
+  }
+
+  function formatVolatilityPoint(value) {
+    const percent = Math.round(Number(value) * 1000) / 10;
+    return `${Number.isInteger(percent) ? percent.toFixed(0) : percent.toFixed(1)}%`;
+  }
+
+  function formatVolatilityRange(lower, upper) {
+    if (upper == null) return `${formatVolatilityPoint(lower)}+`;
+    return `${formatVolatilityPoint(lower)} to ${formatVolatilityPoint(upper)}`;
+  }
+
+  function riskVolatilityNarrative(score, lower, upper) {
+    const bandRange = formatVolatilityRange(lower, upper);
+    if (score <= 2) return `This is a lower-volatility range, usually around ${bandRange} annualized. It should feel relatively steady most of the time, although bond-heavy portfolios can still lose value when rates jump.`;
+    if (score <= 4) return `This is a cautious range, usually around ${bandRange} annualized. Month-to-month swings should stay more muted than an equity-heavy mix, but down periods still happen.`;
+    if (score <= 6) return `This is a moderate range, usually around ${bandRange} annualized. Expect meaningful swings and occasional double-digit losses in rough markets.`;
+    if (score <= 8) return `This is a growth-oriented range, usually around ${bandRange} annualized. Regular double-digit drawdowns are plausible, and recoveries can take time.`;
+    return `This is a high-volatility range, usually around ${bandRange} annualized. Sharp selloffs, deep drawdowns, and wide year-to-year swings should be expected.`;
+  }
+
+  function riskVolatilityBand(score) {
+    const normalized = Math.min(10, Math.max(1, Math.round(Number(score) || 5)));
+    const current = riskTarget(normalized).targetVolatility;
+    const previous = normalized > 1 ? riskTarget(normalized - 1).targetVolatility : 0;
+    const next = normalized < 10 ? riskTarget(normalized + 1).targetVolatility : null;
+    const minVolatility = normalized === 1 ? 0 : (previous + current) / 2;
+    const maxVolatility = next == null ? null : (current + next) / 2;
+    return {
+      min_volatility: round(minVolatility, 4),
+      max_volatility: maxVolatility == null ? null : round(maxVolatility, 4),
+      display_range: formatVolatilityRange(minVolatility, maxVolatility),
+      narrative: riskVolatilityNarrative(normalized, minVolatility, maxVolatility),
+    };
+  }
+
   const BOND_CATALOG = [
     { ticker: "BIL", name: "SPDR 1-3 Month T-Bill", category: "Treasury bills", duration_bucket: "0-1y", term_proxy_years: 0.2, risk_level: 1, price: 91.63, daily_return_pct: 0.04, issuer_url: "https://www.ssga.com/" },
     { ticker: "SHY", name: "iShares 1-3 Year Treasury", category: "Treasury", duration_bucket: "1-3y", term_proxy_years: 1.9, risk_level: 2, price: 82.94, daily_return_pct: 0.11, issuer_url: "https://www.ishares.com/" },
@@ -499,7 +538,8 @@
 
   function buildRiskTolerance(portfolio) {
     const score = clamp(Math.round(Number(portfolio.settings.risk_tolerance_score) || 6), 1, 10);
-    const target = RISK_TARGETS[score];
+    const target = riskTarget(score);
+    const band = riskVolatilityBand(score);
     const weights = portfolio.positions.map((position) => position.market_value / Math.max(portfolio.totals.total_equity, 1));
     const volEstimate = Math.sqrt(weights.reduce((sum, weight, index) => sum + Math.pow(weight * annualVolatilityFor(portfolio.positions[index]), 2), 0));
     const estimatedScore = Object.entries(RISK_TARGETS).reduce((best, [candidate, config]) => (
@@ -515,12 +555,15 @@
             ? "Emphasizes principal stability, liquidity, and smaller expected swings."
             : "Balances equity growth with bond ballast and a modest cash reserve.",
         target_volatility: target.targetVolatility,
+        volatility_band: band,
         target_allocation: { equity: target.equity, bonds: target.bonds, cash: target.cash },
-        volatility_explanation: "Target volatility is an annualized estimate of typical variability, not a loss limit.",
+        volatility_explanation: `Score ${score} targets about ${formatVolatilityPoint(target.targetVolatility)} annualized volatility, roughly a ${band.display_range} band. ${band.narrative} It is still a planning estimate, not a loss limit.`,
       },
       current_model: {
         model_volatility: round(volEstimate, 4),
         estimated_score: estimatedScore,
+        estimated_label: riskTarget(estimatedScore).label,
+        volatility_band: riskVolatilityBand(estimatedScore),
       },
     };
   }
@@ -648,6 +691,7 @@
     const watchlist = new Set(portfolio.settings.bond_watchlist || []);
     return {
       note: "Demo bond prices are lightweight reference snapshots. They refresh only inside the full signed-in market-data workflow.",
+      recommendation_note: "The demo auto-fills ladder rungs from a sample Treasury curve so coupon and yield assumptions vary by maturity.",
       missing_tickers: [],
       assets: BOND_CATALOG.map((asset) => ({
         ...asset,
@@ -656,15 +700,15 @@
         fetched_at: NOW.toISOString(),
       })),
       recommended_ladder: [
-        { label: "1-year rung", years_to_maturity: 1, coupon_rate: 0.04, yield_to_maturity: 0.041, market_price_pct: 100.2, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
-        { label: "3-year rung", years_to_maturity: 3, coupon_rate: 0.041, yield_to_maturity: 0.042, market_price_pct: 99.8, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
-        { label: "5-year rung", years_to_maturity: 5, coupon_rate: 0.042, yield_to_maturity: 0.043, market_price_pct: 99.1, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
-        { label: "7-year rung", years_to_maturity: 7, coupon_rate: 0.043, yield_to_maturity: 0.044, market_price_pct: 98.4, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
-        { label: "10-year rung", years_to_maturity: 10, coupon_rate: 0.044, yield_to_maturity: 0.045, market_price_pct: 97.7, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
+        { label: "1-year Treasury bill", years_to_maturity: 1, coupon_rate: 0.0, yield_to_maturity: 0.041, market_price_pct: 96.06, face_value: 1000, allocation_weight: 0.2, payments_per_year: 1 },
+        { label: "3-year Treasury note", years_to_maturity: 3, coupon_rate: 0.04, yield_to_maturity: 0.039, market_price_pct: 100.29, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
+        { label: "5-year Treasury note", years_to_maturity: 5, coupon_rate: 0.04, yield_to_maturity: 0.040, market_price_pct: 100.00, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
+        { label: "7-year Treasury note", years_to_maturity: 7, coupon_rate: 0.04125, yield_to_maturity: 0.0415, market_price_pct: 99.86, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
+        { label: "10-year Treasury bond", years_to_maturity: 10, coupon_rate: 0.04375, yield_to_maturity: 0.0435, market_price_pct: 100.20, face_value: 1000, allocation_weight: 0.2, payments_per_year: 2 },
       ],
       recommended_barbell: [
-        { label: "2-year anchor", years_to_maturity: 2, coupon_rate: 0.04, yield_to_maturity: 0.041, market_price_pct: 100.1, face_value: 1000, allocation_weight: 0.4, payments_per_year: 2 },
-        { label: "20-year anchor", years_to_maturity: 20, coupon_rate: 0.047, yield_to_maturity: 0.048, market_price_pct: 95.6, face_value: 1000, allocation_weight: 0.6, payments_per_year: 2 },
+        { label: "2-year Treasury note", years_to_maturity: 2, coupon_rate: 0.04, yield_to_maturity: 0.0395, market_price_pct: 100.10, face_value: 1000, allocation_weight: 0.4, payments_per_year: 2 },
+        { label: "20-year Treasury bond", years_to_maturity: 20, coupon_rate: 0.04625, yield_to_maturity: 0.0465, market_price_pct: 99.68, face_value: 1000, allocation_weight: 0.6, payments_per_year: 2 },
       ],
     };
   }

@@ -812,7 +812,10 @@ def _reconstruct_portfolio_history(portfolio: Portfolio, bundle, repository) -> 
     cash_transactions = repository.list_cash_transactions(portfolio.id)
     trades = repository.list_trade_transactions(portfolio.id)
     events: list[dict[str, object]] = []
-    has_opening_lots = False
+    prices = _bundle_prices_by_ticker(bundle)
+    has_dated_opening_lots = False
+    has_undated_opening_snapshot = False
+    undated_openings: list[dict[str, object]] = []
     for transaction in cash_transactions:
         events.append(
             {
@@ -836,7 +839,18 @@ def _reconstruct_portfolio_history(portfolio: Portfolio, bundle, repository) -> 
     for lot in portfolio.lots:
         if lot.source == "manual_trade":
             continue
-        has_opening_lots = True
+        if lot.source == "aggregate_position":
+            has_undated_opening_snapshot = True
+            undated_openings.append(
+                {
+                    "ticker": lot.symbol.strip().upper(),
+                    "quantity_delta": float(lot.quantity),
+                    "cash_delta": 0.0,
+                    "external_flow": float(lot.remaining_cost_basis),
+                }
+            )
+            continue
+        has_dated_opening_lots = True
         events.append(
             {
                 "as_of": _aware_datetime(lot.purchased_at),
@@ -851,11 +865,9 @@ def _reconstruct_portfolio_history(portfolio: Portfolio, bundle, repository) -> 
         for position in portfolio.positions:
             if position.quantity <= 0:
                 continue
-            has_opening_lots = True
-            events.append(
+            has_undated_opening_snapshot = True
+            undated_openings.append(
                 {
-                    "as_of": _aware_datetime(portfolio.created_at),
-                    "kind": "opening_position",
                     "ticker": position.symbol.strip().upper(),
                     "quantity_delta": float(position.quantity),
                     "cash_delta": 0.0,
@@ -863,8 +875,24 @@ def _reconstruct_portfolio_history(portfolio: Portfolio, bundle, repository) -> 
                 }
             )
 
+    if undated_openings:
+        opening_time = _earliest_common_price_time([str(item["ticker"]) for item in undated_openings], prices)
+        if opening_time is None:
+            note = (
+                "This portfolio was imported without lot dates, and cached prices are not available far enough back "
+                "to backfill the opening snapshot yet."
+            )
+            return [], _portfolio_history_coverage([], "unavailable", True, note)
+        events.extend(
+            {
+                "as_of": opening_time,
+                "kind": "opening_snapshot",
+                **item,
+            }
+            for item in undated_openings
+        )
+
     events.sort(key=lambda item: item["as_of"])
-    prices = _bundle_prices_by_ticker(bundle)
     held_tickers = {
         str(event["ticker"])
         for event in events
@@ -925,12 +953,20 @@ def _reconstruct_portfolio_history(portfolio: Portfolio, bundle, repository) -> 
     quality = "complete_ledger"
     note = "Performance is reconstructed from dated cash movements and recorded trades."
     partial = skipped_for_prices
-    if has_opening_lots:
+    if has_dated_opening_lots:
         quality = "reconstructed_opening_lots"
         partial = True
         note = "Performance begins with dated opening lots contributed in kind, then follows recorded cash movements and trades."
+    if has_undated_opening_snapshot:
+        quality = "estimated_opening_snapshot"
+        partial = True
+        note = (
+            "Some holdings were imported without lot dates, so performance is backfilled from the earliest date with "
+            "cached prices for the current opening snapshot."
+        )
     if skipped_for_prices:
-        quality = "partial_market_data"
+        if quality == "complete_ledger":
+            quality = "partial_market_data"
         note += " Some dates are omitted until cached prices exist for every active holding."
     if len(points) < 2:
         return [], _portfolio_history_coverage(points, "unavailable", True, note)
@@ -961,6 +997,24 @@ def _historical_price_at_or_before(points: list[object], as_of: datetime) -> flo
             close = float(point.close)
             return close if close > 0 else None
     return None
+
+
+def _earliest_common_price_time(tickers: list[str], prices: dict[str, list[object]]) -> datetime | None:
+    first_points: list[datetime] = []
+    for ticker in tickers:
+        series = prices.get(str(ticker).strip().upper(), [])
+        first_supported = next(
+            (
+                _aware_datetime(point.as_of)
+                for point in series
+                if isfinite(float(point.close)) and float(point.close) > 0
+            ),
+            None,
+        )
+        if first_supported is None:
+            return None
+        first_points.append(first_supported)
+    return max(first_points) if first_points else None
 
 
 def _aware_datetime(value: datetime) -> datetime:
